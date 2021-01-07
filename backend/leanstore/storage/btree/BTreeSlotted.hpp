@@ -56,6 +56,7 @@ struct BTreeNodeHeader {
    };
 
    Swip<BTreeNode> upper = nullptr;
+   // Node contains keys from ]lower_fence_key, upper_fence_key]
    FenceKey lower_fence = {0, 0};
    FenceKey upper_fence = {0, 0};
 
@@ -181,7 +182,14 @@ struct BTreeNode : public BTreeNodeHeader {
          if (hint[pos2] != keyHead)
             break;
    }
-   // -------------------------------------------------------------------------------------
+   /**
+    * @brief find position of first key, that is >= key in leaf
+    * 
+    * @tparam equalityOnly 
+    * @param key 
+    * @param keyLength 
+    * @return s16 
+    */
    template <bool equalityOnly = false>
    s16 lowerBound(const u8* key, u16 keyLength)
    {
@@ -195,15 +203,16 @@ struct BTreeNode : public BTreeNodeHeader {
          else if (prefixCmp > 0)
             return count;
       }
-      // the compared key has the same prefix
+      // The compared key has the same prefix
+      // Now we compare the rest.
       key += prefix_length;
       keyLength -= prefix_length;
 
       u16 lower = 0;
       u16 upper = count;
       HeadType keyHead = head(key, keyLength);
-
       if (count > hint_count * 2) {
+         // Use hint table to reduce search space in node
          unsigned dist = count / (hint_count + 1);
          unsigned pos, pos2;
          searchHint(keyHead, pos, pos2);
@@ -212,17 +221,18 @@ struct BTreeNode : public BTreeNodeHeader {
             upper = (pos2 + 1) * dist;
       }
 
+      // Binary Search for key in range (lower, upper)
       while (lower < upper) {
          u16 mid = ((upper - lower) / 2) + lower;
          if (keyHead < slot[mid].head) {
             upper = mid;
          } else if (keyHead > slot[mid].head) {
             lower = mid + 1;
-         } else if (slot[mid].key_len <= 4) {
+         } else if (getKeyLen(mid) <= 4) {
             // head is equal, we don't have to check the rest of the key
-            if (keyLength < slot[mid].key_len) {
+            if (keyLength < getKeyLen(mid)) { // Demian: Unreachable?
                upper = mid;
-            } else if (keyLength > slot[mid].key_len) {
+            } else if (keyLength > getKeyLen(mid)) {
                lower = mid + 1;
             } else {
                return mid;
