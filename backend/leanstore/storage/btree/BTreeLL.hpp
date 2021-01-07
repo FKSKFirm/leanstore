@@ -43,6 +43,14 @@ static void checkpoint(void*, BufferFrame& bf, u8* dest);
 ~BTree();
 // -------------------------------------------------------------------------------------
 // Helpers
+/**
+ * @brief Returns HybridPageGuard for leaf containing key.
+ * 
+ * @tparam op_type 
+ * @param target_guard Save found leaf here
+ * @param key Key for which to find leaf
+ * @param key_length length of key
+ */
 template <OP_TYPE op_type = OP_TYPE::POINT_READ>
 inline void findLeafCanJump(HybridPageGuard<BTreeNode>& target_guard, const u8* key, const u16 key_length)
 {
@@ -102,6 +110,10 @@ inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard)
 {
    return meta_node_bf == guard.bf();
 }
+void scanLL(u8* start_key,
+                      u16 key_length,
+                      std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback,
+                      bool asc);
 s64 iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
 s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
 unsigned countInner();
