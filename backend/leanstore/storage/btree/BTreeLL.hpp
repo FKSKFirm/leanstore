@@ -8,10 +8,25 @@ BTree();
 void create(DTID dtid, BufferFrame* meta_bf);
 // -------------------------------------------------------------------------------------
 bool lookupOneLL(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback);
-// starts at the key >= start_key
-void scanAscLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_length, u8* value, u16 value_length)>, function<void()>);
+/**
+ * @brief Scans, starting at start_key and going all the way up, till callback returns false
+ *
+ * @param start_key Key for start position
+ * @param key_length length of start_key
+ * @param callback Function to be executed on each entry, determines if we contine with scan
+ * @param undo how to undo, if we run into a problem
+ */
+void scanAscLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_length, u8* value, u16 value_length)> callback, function<void()> undo);
+/**
+ * @brief Scans, starting at start_key and going all the way up, till callback returns false
+ *
+ * @param start_key Key for start position
+ * @param key_length length of start_key
+ * @param callback Function to be executed on each entry, determines if we contine with scan
+ * @param undo how to undo, if we run into a problem
+ */
 // starts at the key + 1 and downwards
-void scanDescLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_length, u8* value, u16 value_length)>, function<void()>);
+void scanDescLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_length, u8* value, u16 value_length)> callback, function<void()> undo);
 void insertLL(u8* key, u16 key_length, u64 valueLength, u8* value);
 void updateSameSizeLL(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>, WALUpdateGenerator = {{}, {}, 0});
 void updateLL(u8* key, u16 key_length, u64 valueLength, u8* value);
@@ -110,10 +125,6 @@ inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard)
 {
    return meta_node_bf == guard.bf();
 }
-void scanLL(u8* start_key,
-                      u16 key_length,
-                      std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback,
-                      bool asc);
 s64 iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
 s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
 unsigned countInner();

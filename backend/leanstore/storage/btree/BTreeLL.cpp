@@ -16,6 +16,18 @@ namespace storage
 namespace btree
 {
 // -------------------------------------------------------------------------------------
+// Helper declaration
+// -------------------------------------------------------------------------------------
+template <bool asc>
+bool scanNode(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf,
+              std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback);
+template <bool asc>
+s16 getStartPosition(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf);
+template <bool asc>
+void scanLL(u8* start_key, u16 key_length, std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback, BTree* btree);
+template <bool asc>
+bool getNextNodeKey(u8* volatile& next_key, volatile u16& next_key_length, volatile bool& is_start_key, SharedPageGuard<BTreeNode>& s_leaf);
+// -------------------------------------------------------------------------------------
 BTree::BTree() {}
 // -------------------------------------------------------------------------------------
 void BTree::create(DTID dtid, BufferFrame* meta_bf)
@@ -75,12 +87,12 @@ void BTree::scanAscLL(u8* start_key,
                       std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback,
                       function<void()>)
 {
-   scanLL(start_key, key_length, callback, true);
+   scanLL<true>(start_key, key_length, callback, this);
 }
 // -------------------------------------------------------------------------------------
 void BTree::scanDescLL(u8* start_key, u16 key_length, std::function<bool(u8*, u16, u8*, u16)> callback, function<void()>)
 {
-   scanLL(start_key, key_length, callback, false);
+   scanLL<false>(start_key, key_length, callback, this);
 }
 // -------------------------------------------------------------------------------------
 void BTree::insertLL(u8* key, u16 key_length, u64 value_length, u8* value)
@@ -854,93 +866,116 @@ void BTree::iterateChildrenSwips(void*, BufferFrame& bf, std::function<bool(Swip
 }
 // Helpers
 // -------------------------------------------------------------------------------------
-void BTree::scanLL(u8* start_key,
-                      u16 key_length,
-                      std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback,
-                      const bool asc)
+/**
+ * @brief Scans the btree for keys
+ *
+ * @tparam asc Ascending or descending?
+ * @param start_key where to start
+ * @param key_length length of start_key
+ * @param callback function to call on each matching entry, returns if scan should be continued
+ * @param btree b-tree instance on which scan is performed
+ */
+template <bool asc>
+void scanLL(u8* start_key, u16 key_length, std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback, BTree* btree)
 {
    volatile u32 mask = 1;
    u8* volatile next_key = start_key;
    volatile u16 next_key_length = key_length;
-   volatile bool is_heap_freed = true;  // because at first we reuse the start_key
+   volatile bool is_start_key = true;  // because at first we reuse the start_key
    while (true) {
       jumpmuTry()
       {
          HybridPageGuard<BTreeNode> leaf;
          while (true) {
-            // Search in one leafnode
-            findLeafCanJump<OP_TYPE::SCAN>(leaf, next_key, next_key_length);
+            btree->findLeafCanJump<OP_TYPE::SCAN>(leaf, next_key, next_key_length);
             SharedPageGuard<BTreeNode> s_leaf(std::move(leaf));
-            // -------------------------------------------------------------------------------------
-            // Find startvalue for cur
-            if (s_leaf->count == 0) {
+
+            if (scanNode<asc>(start_key, key_length, next_key, s_leaf, callback)) {
+               if (!is_start_key) {
+                  delete[] next_key;
+               }
                jumpmu_return;
             }
-            s16 cur;
-            if (next_key == start_key) {
-               cur = s_leaf->lowerBound<false>(start_key, key_length);
-               if (!asc && s_leaf->lowerBound<true>(start_key, key_length) == -1)
-                  cur--;
-            } else {
-                if (asc){
-                   cur = 0;
-                } else{
-                   cur = s_leaf->count - 1;
-                }
-            }
-            // -------------------------------------------------------------------------------------
-            u16 prefix_length = s_leaf->prefix_length;
-            u8 key[PAGE_SIZE];  // TODO
-            s_leaf->copyPrefix(key);
-            // -------------------------------------------------------------------------------------
-            // Till end of node
-            while ((asc && cur < s_leaf->count) || (!asc && cur >= 0)) {
-               u16 payload_length = s_leaf->getPayloadLength(cur);
-               u8* payload = s_leaf->getPayload(cur);
-               s_leaf->copyKeyWithoutPrefix(cur, key + prefix_length);
-               if (!callback(key, s_leaf->getFullKeyLen(cur), payload, payload_length)) {
-                  if (!is_heap_freed) {
-                     delete[] next_key;
-                     is_heap_freed = true;
-                  }
-                  jumpmu_return;
-               }
-               if (asc){
-                  cur++;
-               } else {
-                  cur--;
-               }
-            }
-            // -------------------------------------------------------------------------------------
-            if (!is_heap_freed) {
-               delete[] next_key;
-               is_heap_freed = true;
-            }
-            if ((asc && s_leaf->isUpperFenceInfinity()) || (!asc && s_leaf->isLowerFenceInfinity())) {
+            if (getNextNodeKey<asc>(next_key, next_key_length, is_start_key, s_leaf)) {
                jumpmu_return;
             }
-            // -------------------------------------------------------------------------------------
-            if (asc){
-               next_key_length = s_leaf->upper_fence.length + 1;
-            } else {
-               next_key_length = s_leaf->lower_fence.length;
-            }
-            next_key = new u8[next_key_length];
-            is_heap_freed = false;
-            if (asc){
-               memcpy(next_key, s_leaf->getUpperFenceKey(), s_leaf->upper_fence.length);
-               next_key[next_key_length - 1] = 0;
-            } else {
-               memcpy(next_key, s_leaf->getLowerFenceKey(), s_leaf->lower_fence.length);
-            }
+
          }
       }
       jumpmuCatch()
       {
          BACKOFF_STRATEGIES()
-         WorkerCounters::myCounters().dt_restarts_read[dt_id]++;
+         WorkerCounters::myCounters().dt_restarts_read[btree->dt_id]++;
       }
    }
+}
+//*
+template <bool asc>
+bool scanNode(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf,
+              std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback)
+{
+   if (s_leaf->count == 0) {
+      return true;
+   }
+   s16 cur = getStartPosition<asc>(start_key, key_length, next_key, s_leaf);
+   u16 prefix_length = s_leaf->prefix_length;
+   u8 key[PAGE_SIZE];  // TODO
+   s_leaf->copyPrefix(key);
+   // Till end of node
+   while ((asc && cur < s_leaf->count) || (!asc && cur >= 0)) {
+      u16 payload_length = s_leaf->getPayloadLength(cur);
+      u8* payload = s_leaf->getPayload(cur);
+      s_leaf->copyKeyWithoutPrefix(cur, key + prefix_length);
+      if (!callback(key, s_leaf->getFullKeyLen(cur), payload, payload_length)) {
+         return true;
+      }
+      if (asc) {
+         cur++;
+      } else {
+         cur--;
+      }
+   }
+   return false;
+}
+template <bool asc>
+bool getNextNodeKey(u8* volatile& next_key, volatile u16& next_key_length, volatile bool& is_start_key, SharedPageGuard<BTreeNode>& s_leaf)
+{
+   if (!is_start_key) {
+      delete[] next_key;
+   }
+   if ((asc && s_leaf->isUpperFenceInfinity()) || (!asc && s_leaf->isLowerFenceInfinity())) {
+      return true;
+   }
+   if (asc) {
+      next_key_length = s_leaf->upper_fence.length + 1;
+      next_key = new u8[next_key_length];
+      memcpy(next_key, s_leaf->getUpperFenceKey(), s_leaf->upper_fence.length);
+      next_key[next_key_length - 1] = 0;
+   }
+   else {
+      next_key_length = s_leaf->lower_fence.length;
+      next_key = new u8[next_key_length];
+      memcpy(next_key, s_leaf->getLowerFenceKey(), s_leaf->lower_fence.length);
+   }
+   is_start_key = false;
+   return false;
+}
+template <bool asc>
+s16 getStartPosition(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf)
+{
+   s16 cur;
+   if (next_key == start_key) {
+      cur = s_leaf->lowerBound<false>(start_key, key_length);
+      if (!asc && s_leaf->lowerBound<true>(start_key, key_length) == -1)
+         cur--;
+   } else {
+      if (asc) {
+         cur = 0;
+      } else {
+         cur = s_leaf->count - 1;
+      }
+   }
+   return cur;
 }
 // -------------------------------------------------------------------------------------
 s64 BTree::iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf)
