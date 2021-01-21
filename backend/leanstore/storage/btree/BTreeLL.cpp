@@ -19,14 +19,17 @@ namespace btree
 // Helper declaration
 // -------------------------------------------------------------------------------------
 template <bool asc>
-bool scanNode(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf,
+bool scanNode(u8* start_key,
+              u16 key_length,
+              volatile bool& is_start_key,
+              SharedPageGuard<BTreeNode>& s_leaf,
               std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback);
 template <bool asc>
-s16 getStartPosition(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf);
+s16 getStartPosition(u8* start_key, u16 key_length, volatile bool& is_start_key, SharedPageGuard<BTreeNode>& s_leaf);
 template <bool asc>
 void scanLL(u8* start_key, u16 key_length, std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback, BTree* btree);
 template <bool asc>
-bool getNextNodeKey(u8* volatile& next_key, volatile u16& next_key_length, volatile bool& is_start_key, SharedPageGuard<BTreeNode>& s_leaf);
+bool getNextNodeKey(vector<u8>& next_key, volatile u16& next_key_length, SharedPageGuard<BTreeNode>& s_leaf);
 // -------------------------------------------------------------------------------------
 BTree::BTree() {}
 // -------------------------------------------------------------------------------------
@@ -82,14 +85,10 @@ bool BTree::lookupOneLL(u8* key, u16 key_length, function<void(const u8*, u16)> 
 }
 // -------------------------------------------------------------------------------------
 
-void BTree::scanAscLL(u8* start_key,
-                      u16 key_length,
-                      std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback,
-                      function<void()>)
+void BTree::scanAscLL(u8* start_key, u16 key_length, std::function<bool(u8*, u16, u8*, u16)> callback, function<void()>)
 {
    scanLL<true>(start_key, key_length, callback, this);
 }
-// -------------------------------------------------------------------------------------
 void BTree::scanDescLL(u8* start_key, u16 key_length, std::function<bool(u8*, u16, u8*, u16)> callback, function<void()>)
 {
    scanLL<false>(start_key, key_length, callback, this);
@@ -441,7 +440,7 @@ void BTree::updateSameSizeLL(u8* key, u16 key_length, function<void(u8* payload,
    }
 }
 // -------------------------------------------------------------------------------------
-// TODO:
+// TODO: Unimplemented
 void BTree::updateLL(u8*, u16, u64, u8*)
 {
    ensure(false);
@@ -879,27 +878,25 @@ template <bool asc>
 void scanLL(u8* start_key, u16 key_length, std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback, BTree* btree)
 {
    volatile u32 mask = 1;
-   u8* volatile next_key = start_key;
+   vector<u8> next_key_vector;
+   next_key_vector.reserve(key_length);
+   memcpy(next_key_vector.data(), start_key, key_length);
    volatile u16 next_key_length = key_length;
-   volatile bool is_start_key = true;  // because at first we reuse the start_key
+   volatile bool is_start_key = true;  // Because in this case we dont start ad corners of node
    while (true) {
       jumpmuTry()
       {
          HybridPageGuard<BTreeNode> leaf;
          while (true) {
-            btree->findLeafCanJump<OP_TYPE::SCAN>(leaf, next_key, next_key_length);
+            btree->findLeafCanJump<OP_TYPE::SCAN>(leaf, next_key_vector.data(), next_key_length);
             SharedPageGuard<BTreeNode> s_leaf(std::move(leaf));
 
-            if (scanNode<asc>(start_key, key_length, next_key, s_leaf, callback)) {
-               if (!is_start_key) {
-                  delete[] next_key;
-               }
+            if (scanNode<asc>(start_key, key_length, is_start_key, s_leaf, callback)) {
                jumpmu_return;
             }
-            if (getNextNodeKey<asc>(next_key, next_key_length, is_start_key, s_leaf)) {
+            if (getNextNodeKey<asc>(next_key_vector, next_key_length, s_leaf)) {
                jumpmu_return;
             }
-
          }
       }
       jumpmuCatch()
@@ -911,13 +908,16 @@ void scanLL(u8* start_key, u16 key_length, std::function<bool(u8* key, u16 key_l
 }
 //*
 template <bool asc>
-bool scanNode(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf,
+bool scanNode(u8* start_key,
+              u16 key_length,
+              volatile bool& is_start_key,
+              SharedPageGuard<BTreeNode>& s_leaf,
               std::function<bool(u8* key, u16 key_length, u8* payload, u16 payload_length)> callback)
 {
    if (s_leaf->count == 0) {
       return true;
    }
-   s16 cur = getStartPosition<asc>(start_key, key_length, next_key, s_leaf);
+   s16 cur = getStartPosition<asc>(start_key, key_length, is_start_key, s_leaf);
    u16 prefix_length = s_leaf->prefix_length;
    u8 key[PAGE_SIZE];  // TODO
    s_leaf->copyPrefix(key);
@@ -938,33 +938,30 @@ bool scanNode(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGu
    return false;
 }
 template <bool asc>
-bool getNextNodeKey(u8* volatile& next_key, volatile u16& next_key_length, volatile bool& is_start_key, SharedPageGuard<BTreeNode>& s_leaf)
+bool getNextNodeKey(vector<u8>& next_key, volatile u16& next_key_length, SharedPageGuard<BTreeNode>& s_leaf)
 {
-   if (!is_start_key) {
-      delete[] next_key;
-   }
    if ((asc && s_leaf->isUpperFenceInfinity()) || (!asc && s_leaf->isLowerFenceInfinity())) {
       return true;
    }
    if (asc) {
       next_key_length = s_leaf->upper_fence.length + 1;
-      next_key = new u8[next_key_length];
-      memcpy(next_key, s_leaf->getUpperFenceKey(), s_leaf->upper_fence.length);
-      next_key[next_key_length - 1] = 0;
+      next_key.reserve(next_key_length);
+      memcpy(next_key.data(), s_leaf->getUpperFenceKey(), s_leaf->upper_fence.length);
+      next_key.data()[next_key_length - 1] = 0;
    }
    else {
       next_key_length = s_leaf->lower_fence.length;
-      next_key = new u8[next_key_length];
-      memcpy(next_key, s_leaf->getLowerFenceKey(), s_leaf->lower_fence.length);
+      next_key.reserve(next_key_length);
+      memcpy(next_key.data(), s_leaf->getLowerFenceKey(), s_leaf->lower_fence.length);
    }
-   is_start_key = false;
    return false;
 }
 template <bool asc>
-s16 getStartPosition(u8* start_key, u16 key_length, u8* volatile next_key, SharedPageGuard<BTreeNode>& s_leaf)
+s16 getStartPosition(u8* start_key, u16 key_length, volatile bool& is_start_key, SharedPageGuard<BTreeNode>& s_leaf)
 {
    s16 cur;
-   if (next_key == start_key) {
+   if (is_start_key) {
+      is_start_key = false;
       cur = s_leaf->lowerBound<false>(start_key, key_length);
       if (!asc && s_leaf->lowerBound<true>(start_key, key_length) == -1)
          cur--;

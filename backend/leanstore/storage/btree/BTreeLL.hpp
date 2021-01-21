@@ -7,6 +7,15 @@ BTree();
 // -------------------------------------------------------------------------------------
 void create(DTID dtid, BufferFrame* meta_bf);
 // -------------------------------------------------------------------------------------
+/**
+ * @brief Looksup one entry via key and executes payload_callback on it.
+ *
+ * @param key Key to find
+ * @param key_length Length of key
+ * @param payload_callback Function to execute on entry
+ * @return true Key found
+ * @return false Key not found
+ */
 bool lookupOneLL(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback);
 /**
  * @brief Scans, starting at start_key and going all the way up, till callback returns false
@@ -25,9 +34,16 @@ void scanAscLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_len
  * @param callback Function to be executed on each entry, determines if we contine with scan
  * @param undo how to undo, if we run into a problem
  */
-// starts at the key + 1 and downwards
 void scanDescLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_length, u8* value, u16 value_length)> callback, function<void()> undo);
-void insertLL(u8* key, u16 key_length, u64 valueLength, u8* value);
+/**
+ * @brief Inserts one key with values into the BTree
+ *
+ * @param key key where to store values
+ * @param key_length length of key
+ * @param value_Length length of values
+ * @param value values to store
+ */
+void insertLL(u8* key, u16 key_length, u64 value_Length, u8* value);
 void updateSameSizeLL(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>, WALUpdateGenerator = {{}, {}, 0});
 void updateLL(u8* key, u16 key_length, u64 valueLength, u8* value);
 bool removeLL(u8* key, u16 key_length);
