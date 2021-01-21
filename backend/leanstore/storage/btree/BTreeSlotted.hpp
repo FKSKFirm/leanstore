@@ -171,6 +171,13 @@ struct BTreeNode : public BTreeNodeHeader {
    }
    void makeHint();
    // -------------------------------------------------------------------------------------
+   /**
+    * @brief @brief Validate that key is in range of node
+    *
+    * @param key Key to validate
+    * @param keyLength Length of key
+    * @return s32 0 if in Node Range, 1 if to low, -1 if to high
+    */
    s32 sanityCheck(u8* key, u16 keyLength);
    // -------------------------------------------------------------------------------------
    void searchHint(u32 keyHead, unsigned& pos, unsigned& pos2)
@@ -185,10 +192,10 @@ struct BTreeNode : public BTreeNodeHeader {
    /**
     * @brief find position of first key, that is >= key in leaf
     * 
-    * @tparam equalityOnly 
+    * @tparam equalityOnly Match should be exact
     * @param key 
     * @param keyLength 
-    * @return s16 
+    * @return s16 Position
     */
    template <bool equalityOnly = false>
    s16 lowerBound(const u8* key, u16 keyLength)

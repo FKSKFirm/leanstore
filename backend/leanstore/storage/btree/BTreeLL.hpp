@@ -1,3 +1,9 @@
+/**
+ * @file BTreeLL.hpp
+ * @brief LowLevel Implementation of BTree operations
+ *
+ */
+
 BufferFrame* meta_node_bf;  // kept in memory
 // -------------------------------------------------------------------------------------
 atomic<u64> height = 1;
