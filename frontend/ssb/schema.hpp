@@ -2,8 +2,10 @@
  * @file schema.hpp
  * @brief defines Schema of each relation.
  *
+ * 2009 Description:
+ * https://www.cs.umb.edu/~poneil/StarSchemaB.pdf
+ * 2007 Description:
  * https://www.cs.umb.edu/~xuedchen/research/publications/StarSchemaB.PDF
- *
  *
  * Each Schema-struct consists of:
  *
@@ -15,6 +17,7 @@
  * - maxFoldLength(): max length of compressed key
  *
  */
+#include "../shared/types.hpp"
 
 struct lineorder_t {
    /*
@@ -26,62 +29,62 @@ struct lineorder_t {
    struct Key {
       static constexpr int id = 0;
       /*
-       * ORDERKEY numeric (int up to SF 300)  first 8 of each 32 keys used
-       * LINENUMBER numeric 1-7
+       * LO_ORDERKEY numeric (int up to SF 300) first 8 of each 32 keys populated
+       * LO_LINENUMBER numeric 1-7
        */
-      Integer order_key;
-      Integer line_number;
+      Integer lo_order_key;
+      Integer lo_line_number;
    };
    /*
-    * CUSTKEY numeric identifier foreign key reference to C_CUSTKEY
-    * PARTKEY identifier foreign key reference to P_PARTKEY
-    * SUPPKEY numeric identifier foreign key reference to S_SUPPKEY
-    * ORDERDATE identifier foreign key reference to D_DATEKEY
-    * ORDERPRIORITY fixed text, size 15 (5 Priorities: 1-URGENT, etc.)
-    * SHIPPRIORITY fixed text, size 1
-    * QUANTITY numeric 1-50 (for PART)
-    * EXTENDEDPRICE numeric, MAX about 55,450 (for PART)
-    * ORDTOTALPRICE numeric, MAX about 388,000 (for ORDER)
-    * DISCOUNT numeric 0-10 (for PART) -- (Represents PERCENT)
-    * REVENUE numeric (for PART: (extendedprice*(100-discount))/100)
-    * SUPPLYCOST numeric (for PART, cost from supplier, max = ?)
-    * TAX numeric 0-8 (for PART)
-    * COMMITDATE Foreign Key reference to D_DATEKEY
-    * SHIPMODE fixed text, size 10 (Modes: REG AIR, AIR, etc.)
+    * LO_CUSTKEY numeric identifier FK to C_CUSTKEY
+    * LO_PARTKEY identifier FK to P_PARTKEY
+    * LO_SUPPKEY numeric identifier FK to S_SUPPKEY
+    * LO_ORDERDATE identifier FK to D_DATEKEY
+    * LO_ORDERPRIORITY fixed text, size 15 (See pg 91: 5 Priorities: 1-URGENT, etc.)
+    * LO_SHIPPRIORITY fixed text, size 1
+    * LO_QUANTITY numeric 1-50 (for PART)
+    * LO_EXTENDEDPRICE numeric ≤ 55,450 (for PART)
+    * LO_ORDTOTALPRICE numeric ≤ 388,000 (ORDER)
+    * LO_DISCOUNT numeric 0-10 (for PART, percent)
+    * LO_REVENUE numeric (for PART: (lo_extendedprice*(100-lo_discnt))/100)
+    * LO_SUPPLYCOST numeric (for PART)
+    * LO_TAX numeric 0-8 (for PART)
+    * LO_COMMITDATE FK to D_DATEKEY
+    * LO_SHIPMODE fixed text, size 10 (See pg. 91: 7 Modes: REG AIR, AIR, etc.)
     */
-   Integer cust_key;
-   Integer part_key;
-   Integer supp_key;
-   Integer oder_date;
-   Varchar<15> order_priority;
-   Varchar<1> ship_priority;
-   Integer quantity;
-   Numeric extended_price;
-   Numeric order_total_price;
-   Integer discount;
-   Numeric revenue;
-   Numeric supply_cost;
-   Integer tax;
-   Integer commit_date;
-   Varchar<10> ship_mode;
+   Integer lo_cust_key;
+   Integer lo_part_key;
+   Integer lo_supp_key;
+   Integer lo_oder_date;
+   Varchar<15> lo_order_priority;
+   Varchar<1> lo_ship_priority;
+   Integer lo_quantity;
+   Numeric lo_extended_price;
+   Numeric lo_order_total_price;
+   Integer lo_discount;
+   Numeric lo_revenue;
+   Numeric lo_supply_cost;
+   Integer lo_tax;
+   Integer lo_commit_date;
+   Varchar<10> lo_ship_mode;
    // -------------------------------------------------------------------------------------
    template <class T>
    static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
-      pos += fold(out + pos, record.order_key);
-      pos += fold(out + pos, record.line_number);
+      pos += fold(out + pos, record.lo_order_key);
+      pos += fold(out + pos, record.lo_line_number);
       return pos;
    }
    template <class T>
    static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
-      pos += fold(out + pos, record.order_key);
-      pos += fold(out + pos, record.line_number);
+      pos += unfold(in + pos, record.lo_order_key);
+      pos += unfold(in + pos, record.lo_line_number);
       return pos;
    }
-   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::order_key) + sizeof(Key::line_number); };
+   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::lo_order_key) + sizeof(Key::lo_line_number); };
 };
 
 struct part_t {
@@ -90,86 +93,86 @@ struct part_t {
    struct Key {
       static constexpr int id = 1;
       /*
-       * PARTKEY identifier
+       * P_PARTKEY identifier
        */
-      Integer part_key;
+      Integer p_part_key;
    };
    /*
-    * NAME variable text, size 22 (Not unique per PART but never was)
-    * MFGR fixed text, size 6 (MFGR#1-5, CARD = 5)
-    * CATEGORY fixed text, size 7 ('MFGR#'||1-5||1-5: CARD = 25)
-    * BRAND1 fixed text, size 9 (CATEGORY||1-40: CARD = 1000)
-    * COLOR variable text, size 11 (CARD = 94)
-    * TYPE variable text, size 25 (CARD = 150)
-    * SIZE numeric 1-50 (CARD = 50)
-    * CONTAINER fixed text(10) (CARD = 40)
+    * P_NAME variable text, size 22 (Not unique)
+    * P_MFGR fixed text, size 6 (MFGR#1-5, CARD = 5)
+    * P_CATEGORY fixed text, size 7 ('MFGR#'||1-5||1-5: CARD = 25)
+    * P_BRAND1 fixed text, size 9 (P_CATEGORY||1-40: CARD = 1000)
+    * P_COLOR variable text, size 11 (CARD = 94)
+    * P_TYPE variable text, size 25 (CARD = 150)
+    * P_SIZE numeric 1-50 (CARD = 50)
+    * P_CONTAINER fixed text, size 10 (CARD = 40)
     */
-   Varchar<22> namePart;
-   Varchar<6> mfgr;
-   Varchar<8> category;
-   Varchar<9> brand1;
-   Varchar<11> color;
-   Varchar<25> type;
-   Integer size;
-   Varchar<10> container;
+   Varchar<22> p_namePart;
+   Varchar<6> p_mfgr;
+   Varchar<8> p_category;
+   Varchar<9> p_brand1;
+   Varchar<11> p_color;
+   Varchar<25> p_type;
+   Integer p_size;
+   Varchar<10> p_container;
 
    template <class T>
    static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
-      pos += fold(out + pos, record.part_key);
+      pos += fold(out + pos, record.p_part_key);
       return pos;
    }
    template <class T>
    static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
-      pos += unfold(in + pos, record.part_key);
+      pos += unfold(in + pos, record.p_part_key);
       return pos;
    }
-   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::part_key); };
+   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::p_part_key); };
 };
 
 struct supplier_t {
-   //  SF*10,000 are populated
+   //  SF*2,000 are populated
    static constexpr int id = 2;
    struct Key {
       static constexpr int id = 2;
       /*
-       * SUPPKEY identifier
+       * S_SUPPKEY numeric identifier
        */
-      Integer supp_key;
+      Integer s_supp_key;
    };
    /*
-    * NAME fixed text, size 25: 'Supplier'||SUPPKEY
-    * ADDRESS variable text, size 25 (city below)
-    * CITY fixed text, size 10 (10/nation: nation_prefix||(0-9))
-    * NATION fixed text(15) (25 values, longest UNITED KINGDOM)
-    * REGION fixed text, size 12 (5 values: longest MIDDLE EAST)
-    * PHONE fixed text, size 15 (many values, format: 43-617-354-1222)
+    * S_NAME fixed text, size 25: 'Supplier'||S_SUPPKEY
+    * S_ADDRESS variable text, size 25 (city below)
+    * S_CITY fixed text, size 10 (10/nation: S_NATION_PREFIX||(0-9)
+    * S_NATION fixed text, size 15 (25 values, longest UNITED KINGDOM)
+    * S_REGION fixed text, size 12 (5 values: longest MIDDLE EAST)
+    * S_PHONE fixed text, size 15 (many values, format: 43-617-354-1222
     */
-   Varchar<25> name;
-   Varchar<25> address;
-   Varchar<10> city;
-   Varchar<15> nation;
-   Varchar<12> region;
-   Varchar<15> phone;
+   Varchar<25> s_name;
+   Varchar<25> s_address;
+   Varchar<10> s_city;
+   Varchar<15> s_nation;
+   Varchar<12> s_region;
+   Varchar<15> s_phone;
 
    template <class T>
    static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
-      pos += fold(out + pos, record.supp_key);
+      pos += fold(out + pos, record.s_supp_key);
       return pos;
    }
    template <class T>
    static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
-      pos += unfold(in + pos, record.supp_key);
+      pos += unfold(in + pos, record.s_supp_key);
       return pos;
    }
-   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::supp_key); };
+   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::s_supp_key); };
 };
 
 struct customer_t {
@@ -178,102 +181,103 @@ struct customer_t {
    struct Key {
       static constexpr int id = 3;
       /*
-       * CUSTKEY identifier
+       * C_CUSTKEY numeric identifier
        */
-      Integer cust_key;
+      Integer c_cust_key;
    };
    /*
-    * NAME variable text, size 25 'Customer'||CUSTKEY
-    * ADDRESS variable text, size 25 (city below)
-    * CITY fixed text, size 10 (10/nation: NATION_PREFIX||(0-9)
-    * NATION fixed text(15) (25 values, longest UNITED KINGDOM)
-    * REGION fixed text, size 12 (5 values: longest MIDDLE EAST)
-    * PHONE fixed text, size 15 (many values, format: 43-617-354-1222)
-    * MKTSEGMENT fixed text, size 10 (longest is AUTOMOBILE)
+    * C_NAME variable text, size 25 'Cutomer'||C_CUSTKEY
+    * C_ADDRESS variable text, size 25 (city below)
+    * C_CITY fixed text, size 10 (10/nation: C_NATION_PREFIX||(0-9)
+    * C_NATION fixed text, size 15 (25 values, longest UNITED KINGDOM)
+    * C_REGION fixed text, size 12 (5 values: longest MIDDLE EAST)
+    * C_PHONE fixed text, size 15 (many values, format: 43-617-354-1222)
+    * C_MKTSEGMENT fixed text, size 10 (longest is AUTOMOBILE)
     */
-   Varchar<25> name;
-   Varchar<25> address;
-   Varchar<10> city;
-   Varchar<15> nation;
-   Varchar<12> region;
-   Varchar<15> phone;
-   Varchar<10> mkt_segment;
+   Varchar<25> c_name;
+   Varchar<25> c_address;
+   Varchar<10> c_city;
+   Varchar<15> c_nation;
+   Varchar<12> c_region;
+   Varchar<15> c_phone;
+   Varchar<10> c_mkt_segment;
 
    template <class T>
    static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
-      pos += fold(out + pos, record.cust_key);
+      pos += fold(out + pos, record.c_cust_key);
       return pos;
    }
    template <class T>
    static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
-      pos += unfold(in + pos, record.cust_key);
+      pos += unfold(in + pos, record.c_cust_key);
       return pos;
    }
-   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::cust_key); };
+   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::c_cust_key); };
 };
 
 struct date_t {
-   // 7 years of days; 7366 days
+   // 7 years of days
+   // Anmerkung dev: start from 1992
    static constexpr int id = 4;
    struct Key {
       static constexpr int id = 4;
       /*
-       * DATEKEY identifier, unique id -- e.g. 19980327 (what we use)
+       * D_DATEKEY identifier, unique id -- e.g. 19980327 (what we use)
        */
-      Integer date_key;
+      Integer d_date_key;
    };
    /*
-    * DATE fixed text, size 18, longest: December 22, 1998
-    * DAYOFWEEK fixed text, size 8, Sunday, Monday, ..., Saturday)
-    * MONTH fixed text, size 9: January, ..., December
-    * YEAR unique value 1992-1998
-    * YEARMONTHNUM numeric (YYYYMM) -- e.g. 199803
-    * YEARMONTH fixed text, size 7: Mar1998 for example
-    * DAYNUMINWEEK numeric 1-7
-    * DAYNUMINMONTH numeric 1-31
-    * DAYNUMINYEAR numeric 1-366
-    * MONTHNUMINYEAR numeric 1-12
-    * WEEKNUMINYEAR numeric 1-53
-    * SELLINGSEASON text, size 12 (Christmas, Summer,...)
-    * LASTDAYINWEEKFL 1 bit
-    * LASTDAYINMONTHFL 1 bit
-    * HOLIDAYFL 1 bit
-    * WEEKDAYFL 1 bit
+    * D_DATE fixed text, size 18: e.g. December 22, 1998
+    * D_DAYOFWEEK fixed text, size 8, Sunday..Saturday
+    * D_MONTH fixed text, size 9: January, ..., December
+    * D_YEAR unique value 1992-1998
+    * D_YEARMONTHNUM numeric (YYYYMM)
+    * D_YEARMONTH fixed text, size 7: (e.g.: Mar1998
+    * D_DAYNUMINWEEK numeric 1-7
+    * D_DAYNUMINMONTH numeric 1-31
+    * D_DAYNUMINYEAR numeric 1-366
+    * D_MONTHNUMINYEAR numeric 1-12
+    * D_WEEKNUMINYEAR numeric 1-53
+    * D_SELLINGSEASON text, size 12 (e.g.: Christmas)
+    * D_LASTDAYINWEEKFL 1 bit
+    * D_LASTDAYINMONTHFL 1 bit
+    * D_HOLIDAYFL 1 bit
+    * D_WEEKDAYFL 1 bit
     */
-   Varchar<18> date;
-   Varchar<8> day_of_week;
-   Varchar<9> month;
-   Integer year;
-   Integer year_month_number;
-   Varchar<7> year_month;
-   Integer day_num_in_week;
-   Integer day_num_in_month;
-   Integer day_num_in_year;
-   Integer month_num_in_year;
-   Integer week_num_in_year;
-   Varchar<12> selling_season;
-   Integer last_day_in_week_fl;   // 1 bit
-   Integer last_day_in_month_fl;  // 1 bit
-   Integer holiday_fl;            //  1 bit
-   Integer weekday_fl;            //  1 bit
+   Varchar<18> d_date;
+   Varchar<9> d_day_of_week;  // Wednesday needs 9 and not 8
+   Varchar<9> d_month;
+   Integer d_year;
+   Integer d_year_month_number;
+   Varchar<7> d_year_month;
+   Integer d_day_num_in_week;
+   Integer d_day_num_in_month;
+   Integer d_day_num_in_year;
+   Integer d_month_num_in_year;
+   Integer d_week_num_in_year;
+   Varchar<12> d_selling_season;
+   Integer d_last_day_in_week_fl;   // 1 bit
+   Integer d_last_day_in_month_fl;  // 1 bit
+   Integer d_holiday_fl;            // 1 bit
+   Integer d_weekday_fl;            // 1 bit
 
    template <class T>
    static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
-      pos += fold(out + pos, record.date_key);
+      pos += fold(out + pos, record.d_date_key);
       return pos;
    }
    template <class T>
    static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
-      pos += unfold(in + pos, record.date_key);
+      pos += unfold(in + pos, record.d_date_key);
       return pos;
    }
-   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::date_key); };
+   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::d_date_key); };
 };
