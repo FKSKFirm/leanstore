@@ -2,8 +2,8 @@ include(ExternalProject)
 find_package(Git REQUIRED)
 
 ExternalProject_Add(
-        tabluate_src
-        PREFIX "vendor/tabluate"
+        tabulate_src
+        PREFIX "vendor/tabulate"
         GIT_REPOSITORY "https://github.com/p-ranav/tabulate.git"
         GIT_TAG 718d827cf05c2e9bba17e926cac2d7ab2356621c
         TIMEOUT 10
@@ -17,9 +17,9 @@ ExternalProject_Add(
         -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
 )
 
-ExternalProject_Get_Property(tabluate_src source_dir)
-set(TABLUATE_INCLUDE_DIR ${source_dir}/include)
-file(MAKE_DIRECTORY ${TABLUATE_INCLUDE_DIR})
-add_library(tabluate INTERFACE IMPORTED)
-set_property(TARGET tabluate APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${TABLUATE_INCLUDE_DIR})
-add_dependencies(tabluate tabluate_src)
+ExternalProject_Get_Property(tabulate_src source_dir)
+set(TABULATE_INCLUDE_DIR ${source_dir}/include)
+file(MAKE_DIRECTORY ${TABULATE_INCLUDE_DIR})
+add_library(tabulate INTERFACE IMPORTED)
+set_property(TARGET tabulate APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${TABULATE_INCLUDE_DIR})
+add_dependencies(tabulate tabulate_src)
