@@ -22,11 +22,11 @@ check `build/frontend/tpcc --help` for other options
   - Config.cpp: Configuration of flags
   - storage:
     - btree: Different B-Tree Implementations
-      - BTreeLL: LowLevel implementation
-      - BTreeSI: ??
-      - BTreeSlotted: ??
-      - BTreeVI: ??
-      - BTreeVW: ??
+      - BTreeLL: LowLevel implementation, without concurrency control
+      - BTreeSI: Snapshot Isolation
+	  - BTreeSlotted: ??
+      - BTreeVI: Version-In-Place
+      - BTreeVW: Version in Write-Ahead-Log (WAL)
     - buffer-manager:
 - frontend: Benchmarks
   - tbcc: Implementation of the [tbc-c benchmark](http://www.tpc.org/tpcc/)
