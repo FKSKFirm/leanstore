@@ -273,8 +273,7 @@ void getNewOrderId(const Integer w_id, const Integer d_id, Numeric& d_tax, Integ
        [&](district_t& rec) {
           d_tax = rec.d_tax;
           o_id = rec.d_next_o_id++;
-       },
-       WALUpdate1(district_t, d_next_o_id));
+       });
 }
 
 void insertOrder(const Integer w_id,
@@ -314,8 +313,7 @@ void updateStock(const Integer w_id,
              rec.s_remote_cnt += (supwares[i] != w_id);
              rec.s_order_cnt++;
              rec.s_ytd += qty;
-          },
-          WALUpdate3(stock_t, s_remote_cnt, s_order_cnt, s_ytd));
+          });
    }
 }
 
@@ -485,7 +483,7 @@ bool getOrderDetails(const Integer w_id, const Integer d_id, const Integer o_id,
    if (!is_safe_to_continue)
       return is_safe_to_continue;
    order.update1(
-       {w_id, d_id, o_id}, [&](order_t& rec) { rec.o_carrier_id = carrier_id; }, WALUpdate1(order_t, o_carrier_id));
+       {w_id, d_id, o_id}, [&](order_t& rec) { rec.o_carrier_id = carrier_id; });
    return is_safe_to_continue;
 }
 
@@ -513,8 +511,7 @@ bool processOrderedItems(const Integer w_id, const Integer d_id, const Integer o
           [&](orderline_t& rec) {
              ol_total += rec.ol_amount;
              rec.ol_delivery_d = datetime;
-          },
-          WALUpdate1(orderline_t, ol_delivery_d));
+          });
    }
    return is_safe_to_continue;
 }
@@ -526,8 +523,7 @@ void updateCustomer(const Integer w_id, const Integer d_id, const Integer c_id, 
        [&](customer_t& rec) {
           rec.c_balance += ol_total;
           rec.c_delivery_cnt++;
-       },
-       WALUpdate2(customer_t, c_balance, c_delivery_cnt));
+       });
 }
 
 void delivery(Integer w_id, Integer carrier_id, Timestamp datetime)
@@ -855,8 +851,7 @@ void updateCustomerPayment(const Integer w_id,
              rec.c_balance = c_new_balance;
              rec.c_ytd_payment = c_new_ytd_payment;
              rec.c_payment_cnt = c_new_payment_cnt;
-          },
-          WALUpdate4(customer_t, c_data, c_balance, c_ytd_payment, c_payment_cnt));
+          });
    } else {
       customer.update1(
           {c_w_id, c_d_id, c_id},
@@ -864,8 +859,7 @@ void updateCustomerPayment(const Integer w_id,
              rec.c_balance = c_new_balance;
              rec.c_ytd_payment = c_new_ytd_payment;
              rec.c_payment_cnt = c_new_payment_cnt;
-          },
-          WALUpdate3(customer_t, c_balance, c_ytd_payment, c_payment_cnt));
+          });
    }
 }
 
@@ -892,12 +886,12 @@ void paymentById(Integer w_id, Integer d_id, Integer c_w_id, Integer c_d_id, Int
    Varchar<10> w_name;
    lookupWarehouseName(w_id, w_name);
    warehouse.update1(
-       {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; }, WALUpdate1(warehouse_t, w_ytd));
+       {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; });
 
    Varchar<10> d_name;
    lookupDistrictName(w_id, d_id, d_name);
    district.update1(
-       {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; }, WALUpdate1(district_t, d_ytd));
+       {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; });
 
    updateCustomerPayment(w_id, d_id, c_w_id, c_d_id, c_id, h_date, h_amount, w_name, d_name);
    logPayment(w_id, d_id, c_w_id, c_d_id, c_id, h_amount, datetime, w_name, d_name);

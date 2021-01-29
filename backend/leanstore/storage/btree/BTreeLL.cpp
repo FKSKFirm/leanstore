@@ -109,13 +109,6 @@ void BTree::insertLL(u8* key, u16 key_length, u64 value_length, u8* value)
          if (c_x_guard->prepareInsert(key, key_length, value_length)) {
             c_x_guard->insert(key, key_length, value, value_length);
             if (FLAGS_wal) {
-               auto wal_entry = c_x_guard.reserveWALEntry<nocc::WALInsert>(key_length + value_length);
-               wal_entry->type = WAL_LOG_TYPE::WALInsert;
-               wal_entry->key_length = key_length;
-               wal_entry->value_length = value_length;
-               std::memcpy(wal_entry->payload, key, key_length);
-               std::memcpy(wal_entry->payload + key_length, value, value_length);
-               wal_entry.submit();
             }
             jumpmu_return;
          }
@@ -272,35 +265,6 @@ void BTree::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
       };
       if (FLAGS_wal) {
-         auto new_root_init_wal = new_root.reserveWALEntry<nocc::WALInitPage>(0);
-         new_root_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-         new_root_init_wal->dt_id = dt_id;
-         new_root_init_wal.submit();
-         auto new_left_init_wal = new_left_node.reserveWALEntry<nocc::WALInitPage>(0);
-         new_left_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-         new_left_init_wal->dt_id = dt_id;
-         new_left_init_wal.submit();
-         // -------------------------------------------------------------------------------------
-         nocc::WALLogicalSplit logical_split_entry;
-         logical_split_entry.type = WAL_LOG_TYPE::WALLogicalSplit;
-         logical_split_entry.right_pid = c_x_guard.bf()->header.pid;
-         logical_split_entry.parent_pid = new_root.bf()->header.pid;
-         logical_split_entry.left_pid = new_left_node.bf()->header.pid;
-         // -------------------------------------------------------------------------------------
-         auto current_right_wal = c_x_guard.reserveWALEntry<nocc::WALLogicalSplit>(0);
-         *current_right_wal = logical_split_entry;
-         assert(current_right_wal->type == logical_split_entry.type);
-         current_right_wal.submit();
-         // -------------------------------------------------------------------------------------
-         exec();
-         // -------------------------------------------------------------------------------------
-         auto root_wal = new_root.reserveWALEntry<nocc::WALLogicalSplit>(0);
-         *root_wal = logical_split_entry;
-         root_wal.submit();
-         // -------------------------------------------------------------------------------------
-         auto left_wal = new_left_node.reserveWALEntry<nocc::WALLogicalSplit>(0);
-         *left_wal = logical_split_entry;
-         left_wal.submit();
       } else {
          exec();
       }
@@ -328,34 +292,6 @@ void BTree::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          };
          // -------------------------------------------------------------------------------------
          if (FLAGS_wal) {
-            auto new_left_init_wal = new_left_node.reserveWALEntry<nocc::WALInitPage>(0);
-            new_left_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-            new_left_init_wal->dt_id = dt_id;
-            new_left_init_wal.submit();
-            // -------------------------------------------------------------------------------------
-            nocc::WALLogicalSplit logical_split_entry;
-            logical_split_entry.type = WAL_LOG_TYPE::WALLogicalSplit;
-            logical_split_entry.right_pid = c_x_guard.bf()->header.pid;
-            logical_split_entry.parent_pid = p_x_guard.bf()->header.pid;
-            logical_split_entry.left_pid = new_left_node.bf()->header.pid;
-            // -------------------------------------------------------------------------------------
-            auto current_right_wal = c_x_guard.reserveWALEntry<nocc::WALLogicalSplit>(0);
-            *current_right_wal = logical_split_entry;
-            current_right_wal.submit();
-            // -------------------------------------------------------------------------------------
-            exec();
-            // -------------------------------------------------------------------------------------
-            auto parent_wal = p_x_guard.reserveWALEntry<nocc::WALLogicalSplit>(0);
-            *parent_wal = logical_split_entry;
-            parent_wal.submit();
-            // -------------------------------------------------------------------------------------
-            auto left_init_wal = new_left_node.reserveWALEntry<nocc::WALInitPage>(0);
-            left_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-            left_init_wal->dt_id = dt_id;
-            left_init_wal.submit();
-            auto left_wal = new_left_node.reserveWALEntry<nocc::WALLogicalSplit>(0);
-            *left_wal = logical_split_entry;
-            left_wal.submit();
          } else {
             exec();
          }
@@ -367,7 +303,7 @@ void BTree::trySplit(BufferFrame& to_split, s16 favored_split_pos)
    }
 }
 // -------------------------------------------------------------------------------------
-void BTree::updateSameSizeLL(u8* key, u16 key_length, function<void(u8* payload, u16 payload_size)> callback, WALUpdateGenerator wal_update_generator)
+void BTree::updateSameSizeLL(u8* key, u16 key_length, function<void(u8* payload, u16 payload_size)> callback)
 {
    cr::Worker::my().walEnsureEnoughSpace(PAGE_SIZE * 1);
    volatile u32 mask = 1;
@@ -384,18 +320,6 @@ void BTree::updateSameSizeLL(u8* key, u16 key_length, function<void(u8* payload,
          u16 payload_length = c_x_guard->getPayloadLength(pos);
          // -------------------------------------------------------------------------------------
          if (FLAGS_wal) {
-            // if it is a secondary index, then we can not use updateSameSize
-            assert(wal_update_generator.entry_size > 0);
-            // -------------------------------------------------------------------------------------
-            auto wal_entry = c_x_guard.reserveWALEntry<nocc::WALUpdate>(key_length + wal_update_generator.entry_size);
-            wal_entry->type = WAL_LOG_TYPE::WALUpdate;
-            wal_entry->key_length = key_length;
-            std::memcpy(wal_entry->payload, key, key_length);
-            wal_update_generator.before(c_x_guard->getPayload(pos), wal_entry->payload + key_length);
-            // The actual update by the client
-            callback(c_x_guard->getPayload(pos), payload_length);
-            wal_update_generator.after(c_x_guard->getPayload(pos), wal_entry->payload + key_length);
-            wal_entry.submit();
          } else {
             callback(c_x_guard->getPayload(pos), payload_length);
          }
@@ -458,12 +382,6 @@ bool BTree::removeLL(u8* key, u16 key_length)
          auto c_x_guard = ExclusivePageGuard(std::move(c_guard));
          if (c_x_guard->remove(key, key_length)) {
             if (FLAGS_wal) {
-               auto wal_entry = c_x_guard.reserveWALEntry<nocc::WALRemove>(key_length);
-               wal_entry->type = WAL_LOG_TYPE::WALRemove;
-               wal_entry->key_length = key_length;
-               // TODO: copy value
-               std::memcpy(wal_entry->payload, key, key_length);
-               wal_entry.submit();
             }
          } else {
             jumpmu_return false;

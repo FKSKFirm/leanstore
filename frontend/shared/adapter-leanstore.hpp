@@ -8,7 +8,6 @@
 #include "types.hpp"
 // -------------------------------------------------------------------------------------
 #include "leanstore/LeanStore.hpp"
-#include "leanstore/storage/btree/WALMacros.hpp"
 // -------------------------------------------------------------------------------------
 #include <cassert>
 #include <cstdint>
@@ -106,11 +105,11 @@ struct LeanStoreAdapter {
     * @param wal_update_generator ??
     */
    template <class Fn>
-   void update1(const typename Record::Key& key, const Fn& fn, storage::btree::WALUpdateGenerator wal_update_generator)
+   void update1(const typename Record::Key& key, const Fn& fn)
    {
       u8 folded_key[Record::maxFoldLength()];
       u16 folded_key_len = Record::foldKey(folded_key, key);
-      const auto res = btree->updateSameSize(folded_key, folded_key_len, update1Callback(fn), wal_update_generator);
+      const auto res = btree->updateSameSize(folded_key, folded_key_len, update1Callback(fn));
       ensure(res == btree::OP_RESULT::OK);
    }
 

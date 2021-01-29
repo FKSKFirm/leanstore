@@ -50,7 +50,7 @@ void scanDescLL(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_le
  * @param value values to store
  */
 void insertLL(u8* key, u16 key_length, u64 value_Length, u8* value);
-void updateSameSizeLL(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>, WALUpdateGenerator = {{}, {}, 0});
+void updateSameSizeLL(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>);
 void updateLL(u8* key, u16 key_length, u64 valueLength, u8* value);
 bool removeLL(u8* key, u16 key_length);
 // -------------------------------------------------------------------------------------
