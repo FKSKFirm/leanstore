@@ -71,3 +71,7 @@ DECLARE_bool(vi);
 // -------------------------------------------------------------------------------------
 DECLARE_bool(persist);
 DECLARE_uint64(tmp);
+// -------------------------------------------------------------------------------------
+DECLARE_bool(lsm);
+DECLARE_bool(lsm_bloomFilter);
+DECLARE_uint64(lsm_pageSizeFactor);

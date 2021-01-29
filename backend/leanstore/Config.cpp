@@ -4,8 +4,8 @@
 // -------------------------------------------------------------------------------------
 DEFINE_string(free_pages_list_path, "leanstore_free_pages", "");
 // -------------------------------------------------------------------------------------
-DEFINE_double(dram_gib, 1, "");
-DEFINE_double(ssd_gib, 1700, "");
+DEFINE_double(dram_gib, 1, "Available RAM capacity for Buffer manager");
+DEFINE_double(ssd_gib, 1700, "Available capacity for SSD operations");
 DEFINE_uint32(cool_pct, 10, "Start cooling pages when <= x% are free");
 DEFINE_uint32(free_pct, 1, "pct");
 DEFINE_uint32(partition_bits, 6, "bits per partition");
@@ -13,7 +13,7 @@ DEFINE_uint32(pp_threads, 1, "number of page provider threads");
 // -------------------------------------------------------------------------------------
 DEFINE_string(csv_path, "./log", "");
 DEFINE_bool(csv_truncate, false, "");
-DEFINE_string(ssd_path, "./leanstore", "");
+DEFINE_string(ssd_path, "./leanstore", "Location of file on SSD");
 DEFINE_uint32(async_batch_size, 256, "");
 DEFINE_bool(trunc, false, "Truncate file");
 DEFINE_uint32(falloc, 0, "Preallocate GiB");
@@ -61,16 +61,21 @@ DEFINE_string(tag, "", "Unique identifier for this, will be appended to each lin
 // -------------------------------------------------------------------------------------
 DEFINE_bool(out_of_place, false, "");
 // -------------------------------------------------------------------------------------
-DEFINE_bool(wal, false, "");
+DEFINE_bool(wal, false, "Write-Ahead-Log");
 DEFINE_uint64(wal_offset_gib, 1, "");
 DEFINE_bool(wal_io_hack, false, "Does not really write logs on SSD");
 DEFINE_bool(wal_fsync, false, "");
 // -------------------------------------------------------------------------------------
-DEFINE_bool(si, false, "");
+DEFINE_bool(si, false, "Snapshot Isolation");
 DEFINE_uint64(si_refresh_rate, 0, "");
-DEFINE_bool(vw, false, "");
+DEFINE_bool(vw, false, "Version-In-Write-Ahead-Log");
 DEFINE_bool(vw_todo, false, "");
-DEFINE_bool(vi, false, "");
+DEFINE_bool(vi, false, "Version-In-Plage");
 // -------------------------------------------------------------------------------------
 DEFINE_bool(persist, false, "");
 DEFINE_uint64(tmp, 0, "");
+// -------------------------------------------------------------------------------------
+// Main switch is lsm lsm_ variables only apply when lsm is true
+DEFINE_bool(lsm, false, "Enable LSM implementation instead of BTree");
+DEFINE_bool(lsm_bloomFilter, false, "Enable Bloom Filter in LSM");
+DEFINE_uint64(lsm_pageSizeFactor, 10, "Factor for size of each LSM level");
