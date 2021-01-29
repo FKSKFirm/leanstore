@@ -33,10 +33,6 @@ struct DTRegistry {
       std::function<bool(void*, BufferFrame&, OptimisticGuard&, ParentSwipHandler&)> check_space_utilization;
       std::function<void(void* btree_object, BufferFrame& bf, u8* dest)> checkpoint;
       // -------------------------------------------------------------------------------------
-      // MVCC / SI
-      std::function<void(void* btree_object, const u8* entry, u64 tts)> undo;
-      std::function<void(void* btree_object, const u8* entry, u64 tts)> todo;
-      // -------------------------------------------------------------------------------------
       u64 instances_counter = 0;
    };
    // -------------------------------------------------------------------------------------

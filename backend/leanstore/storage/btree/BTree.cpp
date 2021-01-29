@@ -22,9 +22,7 @@ struct DTRegistry::DTMeta BTree::getMeta()
    DTRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
                                     .find_parent = findParent,
                                     .check_space_utilization = checkSpaceUtilization,
-                                    .checkpoint = checkpoint,
-                                    .undo = undo,
-                                    .todo = todo};
+                                    .checkpoint = checkpoint};
    return btree_meta;
 }
 // -------------------------------------------------------------------------------------

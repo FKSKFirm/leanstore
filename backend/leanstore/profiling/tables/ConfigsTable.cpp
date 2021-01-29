@@ -53,6 +53,7 @@ void ConfigsTable::open()
    columns.emplace("c_si", [&](Column& col) { col << FLAGS_si; });
    columns.emplace("c_vw", [&](Column& col) { col << FLAGS_vw; });
    columns.emplace("c_vw_todo", [&](Column& col) { col << FLAGS_vw_todo; });
+   //TODO: ADD LSM option
    // -------------------------------------------------------------------------------------
    for (auto& c : columns) {
       c.second.generator(c.second);

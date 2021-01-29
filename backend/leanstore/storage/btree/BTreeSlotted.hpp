@@ -27,22 +27,8 @@ struct BTreeNode;
 using SwipType = Swip<BTreeNode>;
 using HeadType = u32;
 // -------------------------------------------------------------------------------------
-static inline u64 swap(u64 x)
-{
-   return __builtin_bswap64(x);
-}
-static inline u32 swap(u32 x)
-{
-   return __builtin_bswap32(x);
-}
-static inline u16 swap(u16 x)
-{
-   return __builtin_bswap16(x);
-}
-// -------------------------------------------------------------------------------------
 struct BTreeNodeHeader {
    static const u16 underFullSize = EFFECTIVE_PAGE_SIZE * 0.6;
-   static const u16 K_WAY_MERGE_THRESHOLD = EFFECTIVE_PAGE_SIZE * 0.45;
 
    struct SeparatorInfo {
       u16 length;
@@ -122,10 +108,6 @@ struct BTreeNode : public BTreeNodeHeader {
    inline u16 getFullKeyLen(u16 slotId) { return prefix_length + getKeyLen(slotId); }
    inline u16 getPayloadLength(u16 slotId) { return slot[slotId].payload_len; }
    inline void setPayloadLength(u16 slotId, u16 len) { slot[slotId].payload_len = len; }
-   // -------------------------------------------------------------------------------------
-   inline void markAsDelta(u16 slotId) { slot[slotId].is_delta = true; }
-   inline void markAsFullTuple(u16 slotId) { slot[slotId].is_delta = false; }
-   inline bool isDelta(u16 slotId) { return slot[slotId].is_delta; }
    // -------------------------------------------------------------------------------------
    inline u8* getPayload(u16 slotId) { return ptr() + slot[slotId].offset + slot[slotId].key_len; }
    inline SwipType& getChild(u16 slotId) { return *reinterpret_cast<SwipType*>(getPayload(slotId)); }

@@ -85,9 +85,6 @@ struct BTree {
    OP_RESULT scanDesc(u8* start_key, u16 key_length, function<bool(u8* key, u16 key_length, u8* value, u16 value_length)> callback, function<void()> undo);
 // -------------------------------------------------------------------------------------
 #include "BTreeLL.hpp"
-// -------------------------------------------------------------------------------------
-// SI
-#include "BTreeSI.hpp"
 };
 // -------------------------------------------------------------------------------------
 }  // namespace btree

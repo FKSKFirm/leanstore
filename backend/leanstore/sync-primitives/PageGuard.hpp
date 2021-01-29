@@ -107,10 +107,6 @@ class HybridPageGuard
    inline void syncGSN()
    {
       if (FLAGS_wal) {
-         auto current_gsn = cr::Worker::my().getCurrentGSN();
-         if (current_gsn < bf->page.GSN) {
-            cr::Worker::my().setCurrentGSN(bf->page.GSN);
-         }
       }
    }
    // -------------------------------------------------------------------------------------

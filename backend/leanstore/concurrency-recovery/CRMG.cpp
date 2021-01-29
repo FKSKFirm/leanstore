@@ -54,12 +54,6 @@ CRManager::CRManager(s32 ssd_fd, u64 end_of_block_device) : ssd_fd(ssd_fd), end_
    }
    // -------------------------------------------------------------------------------------
    if (FLAGS_wal) {
-      std::thread group_commiter([&]() { groupCommiter(); });
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(FLAGS_pp_threads, &cpuset);
-      posix_check(pthread_setaffinity_np(group_commiter.native_handle(), sizeof(cpu_set_t), &cpuset) == 0);
-      group_commiter.detach();
    }
 }
 // -------------------------------------------------------------------------------------
@@ -81,11 +75,6 @@ void CRManager::scheduleJobSync(u64 t_i, std::function<void()> job)
 {
    setJob(t_i, job);
    joinOne(t_i, [&](WorkerThread& meta) { return meta.job_done; });
-}
-// -------------------------------------------------------------------------------------
-void CRManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
-{
-   setJob(t_i, job);
 }
 // -------------------------------------------------------------------------------------
 void CRManager::scheduleJobs(u64 workers, std::function<void()> job)
