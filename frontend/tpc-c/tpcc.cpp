@@ -150,8 +150,18 @@ void printLoadStatistics(LeanStore& db)
 {
    auto& crm = db.getCRManager();
    double gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
-   cout << "data loaded - consumed space in GiB = " << gib << endl;
+   cout << "data loaded - consumed space in GiB = " << gib << endl;cout << "data loaded - consumed space in GiB = " << gib << endl;
    crm.scheduleJobSync(0, [&]() { cout << "Warehouse pages = " << warehouse.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "District pages = " << district.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Customer pages = " << customer.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Customerwdl pages = " << customerwdl.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "History pages = " << history.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Neworder pages = " << neworder.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Order pages = " << order.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Order_wdc pages = " << order_wdc.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "orderline pages = " << orderline.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Item pages = " << item.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Stock pages = " << stock.btree->countPages() << endl; });
 }
 
 void runTPCC(LeanStore& db)

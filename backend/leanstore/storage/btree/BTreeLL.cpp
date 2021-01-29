@@ -1003,7 +1003,8 @@ s64 BTree::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s
       {
          HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
          HybridPageGuard c_guard(p_guard, p_guard->upper);
-         jumpmu_return iterateAllPagesRec(c_guard, inner, leaf);
+         s64 result = iterateAllPagesRec(c_guard, inner, leaf);
+         jumpmu_return result;
       }
       jumpmuCatch() {}
    }
