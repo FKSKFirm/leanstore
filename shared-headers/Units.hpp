@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 // -------------------------------------------------------------------------------------
 using std::atomic;
 using std::cerr;
