@@ -68,9 +68,9 @@ DEFINE_bool(wal_fsync, false, "");
 // -------------------------------------------------------------------------------------
 DEFINE_bool(si, false, "Snapshot Isolation");
 DEFINE_uint64(si_refresh_rate, 0, "");
-DEFINE_bool(vw, false, "Version-In-Write-Ahead-Log");
+DEFINE_bool(vw, false, "BTree with SI using versions in WAL");
 DEFINE_bool(vw_todo, false, "");
-DEFINE_bool(vi, false, "Version-In-Plage");
+DEFINE_bool(vi, false, "BTree with SI using in-place version");
 // -------------------------------------------------------------------------------------
 DEFINE_bool(persist, false, "");
 DEFINE_uint64(tmp, 0, "");

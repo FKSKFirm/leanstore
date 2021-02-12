@@ -25,7 +25,6 @@ class HybridPageGuard
   public:
    BufferFrame* bf = nullptr;
    Guard guard;
-   bool manually_checked = false;
    bool keep_alive = true;
    // -------------------------------------------------------------------------------------
    // Constructors
@@ -54,14 +53,14 @@ class HybridPageGuard
    // -------------------------------------------------------------------------------------
    // I: Lock coupling
    template <typename T2>
-   HybridPageGuard(HybridPageGuard<T2>& p_guard, Swip<T>& swip, const FALLBACK_METHOD if_contended = FALLBACK_METHOD::SPIN)
+   HybridPageGuard(HybridPageGuard<T2>& p_guard, Swip<T>& swip, const LATCH_FALLBACK_MODE if_contended = LATCH_FALLBACK_MODE::SPIN)
        : bf(&BMC::global_bf->tryFastResolveSwip(p_guard.guard, swip.template cast<BufferFrame>())), guard(bf->header.latch)
    {
-      if (if_contended == FALLBACK_METHOD::SPIN) {
+      if (if_contended == LATCH_FALLBACK_MODE::SPIN) {
          guard.toOptimisticSpin();
-      } else if (if_contended == FALLBACK_METHOD::EXCLUSIVE) {
+      } else if (if_contended == LATCH_FALLBACK_MODE::EXCLUSIVE) {
          guard.toOptimisticOrExclusive();
-      } else if (if_contended == FALLBACK_METHOD::SHARED) {
+      } else if (if_contended == LATCH_FALLBACK_MODE::SHARED) {
          guard.toOptimisticOrShared();
       }
       syncGSN();
@@ -100,29 +99,48 @@ class HybridPageGuard
       bf = other.bf;
       guard = std::move(other.guard);
       keep_alive = other.keep_alive;
-      manually_checked = other.manually_checked;
       return *this;
    }
    // -------------------------------------------------------------------------------------
+   inline void incrementGSN() { bf->page.GSN++; }
+   // WAL
    inline void syncGSN()
    {
       if (FLAGS_wal) {
+         auto current_gsn = cr::Worker::my().getCurrentGSN();
+         if (current_gsn < bf->page.GSN) {
+            cr::Worker::my().setCurrentGSN(bf->page.GSN);
+         }
       }
    }
+   template <typename WT>
+   cr::Worker::WALEntryHandler<WT> reserveWALEntry(u64 extra_size)
+   {
+      assert(FLAGS_wal);
+      assert(guard.state == GUARD_STATE::EXCLUSIVE);
+      const LID gsn = std::max<LID>(bf->page.GSN, cr::Worker::my().getCurrentGSN()) + 1;
+      bf->page.GSN = gsn;
+      cr::Worker::my().setCurrentGSN(gsn);
+      // -------------------------------------------------------------------------------------
+      const auto pid = bf->header.pid;
+      const auto dt_id = bf->page.dt_id;
+      auto handler = cr::Worker::my().reserveDTEntry<WT>(sizeof(WT) + extra_size, pid, gsn, dt_id);
+      return handler;
+   }
+   inline void submitWALEntry(u64 total_size) { cr::Worker::my().submitDTEntry(total_size); }
    // -------------------------------------------------------------------------------------
    inline bool hasFacedContention() { return guard.faced_contention; }
-   inline void kill() { guard.unlock(); }
+   inline void unlock() { guard.unlock(); }
    inline void recheck() { guard.recheck(); }
-   inline void recheck_done()
-   {
-      manually_checked = true;
-      guard.recheck();
-   }
    // -------------------------------------------------------------------------------------
    inline T& ref() { return *reinterpret_cast<T*>(bf->page.dt); }
    inline T* ptr() { return reinterpret_cast<T*>(bf->page.dt); }
    inline Swip<T> swip() { return Swip<T>(bf); }
    inline T* operator->() { return reinterpret_cast<T*>(bf->page.dt); }
+   // -------------------------------------------------------------------------------------
+   // Use with caution!
+   void toShared() { guard.toShared(); }
+   void toExclusive() { guard.toExclusive(); }
    // -------------------------------------------------------------------------------------
    void reclaim()
    {
@@ -157,26 +175,17 @@ class ExclusivePageGuard
    {
       ref_guard.guard.toExclusive();
       if (!FLAGS_wal) {
-         ref_guard.bf->page.GSN++;
+         ref_guard.incrementGSN();
       }
-      WorkerCounters::myCounters().tmp++;
    }
    // -------------------------------------------------------------------------------------
    template <typename WT>
    cr::Worker::WALEntryHandler<WT> reserveWALEntry(u64 extra_size)
    {
-      assert(FLAGS_wal);
-      const LID gsn = std::max<LID>(ref_guard.bf->page.GSN, cr::Worker::my().getCurrentGSN()) + 1;
-      ref_guard.bf->page.GSN = gsn;
-      cr::Worker::my().setCurrentGSN(gsn);
-      // -------------------------------------------------------------------------------------
-      const auto pid = ref_guard.bf->header.pid;
-      const auto dt_id = ref_guard.bf->page.dt_id;
-      auto handler = cr::Worker::my().reserveDTEntry<WT>(sizeof(WT) + extra_size, pid, gsn, dt_id);
-      return handler;
+      return ref_guard.template reserveWALEntry<WT>(extra_size);
    }
    // -------------------------------------------------------------------------------------
-   inline void submitWALEntry(u64 total_size) { cr::Worker::my().submitDTEntry(total_size); }
+   inline void submitWALEntry(u64 total_size) { ref_guard.submitWALEntry(total_size); }
    // -------------------------------------------------------------------------------------
    template <typename... Args>
    void init(Args&&... args)
@@ -191,7 +200,7 @@ class ExclusivePageGuard
       if (!ref_guard.keep_alive && ref_guard.guard.state == GUARD_STATE::EXCLUSIVE) {
          ref_guard.reclaim();
       } else {
-         ref_guard.guard.unlock();
+         ref_guard.unlock();
       }
    }
    // -------------------------------------------------------------------------------------
@@ -209,9 +218,9 @@ class SharedPageGuard
   public:
    HybridPageGuard<T>& ref_guard;
    // I: Upgrade
-   SharedPageGuard(HybridPageGuard<T>&& h_guard) : ref_guard(h_guard) { ref_guard.guard.toShared(); }
+   SharedPageGuard(HybridPageGuard<T>&& h_guard) : ref_guard(h_guard) { ref_guard.toShared(); }
    // -------------------------------------------------------------------------------------
-   ~SharedPageGuard() { ref_guard.guard.unlock(); }
+   ~SharedPageGuard() { ref_guard.unlock(); }
    // -------------------------------------------------------------------------------------
    inline T& ref() { return *reinterpret_cast<T*>(ref_guard.bf->page.dt); }
    inline T* ptr() { return reinterpret_cast<T*>(ref_guard.bf->page.dt); }

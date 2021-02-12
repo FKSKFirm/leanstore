@@ -1,9 +1,3 @@
-/**
- * @file tpcc_workload.hpp
- * @brief Functions to execute TPC-C transactions.
- *
- */
-
 DEFINE_bool(order_wdc_index, true, "");
 atomic<u64> scanned_elements = 0;
 
@@ -11,8 +5,8 @@ atomic<u64> scanned_elements = 0;
 
 Integer warehouseCount;
 // -------------------------------------------------------------------------------------
-static constexpr INTEGER OL_I_ID_C = 7911;  // C for getItemID: in range [0, 8191]
-static constexpr INTEGER C_ID_C = 259;      // C for getCustomerID: in range [0, 1023]
+static constexpr INTEGER OL_I_ID_C = 7911;  // in range [0, 8191]
+static constexpr INTEGER C_ID_C = 259;      // in range [0, 1023]
 // NOTE: TPC-C 2.1.6.1 specifies that abs(C_LAST_LOAD_C - C_LAST_RUN_C) must
 // be within [65, 119]
 static constexpr INTEGER C_LAST_LOAD_C = 157;  // in range [0, 255]
@@ -20,92 +14,62 @@ static constexpr INTEGER C_LAST_RUN_C = 223;   // in range [0, 255]
 // -------------------------------------------------------------------------------------
 static constexpr INTEGER ITEMS_NO = 100000;  // 100K
 
-// -------------------------------------------------------------------------------------
-// RandomGenerator functions
-// -------------------------------------------------------------------------------------
-
 // [0, n)
 Integer rnd(Integer n)
 {
    return leanstore::utils::RandomGenerator::getRand(0, n);
 }
 
+// [fromId, toId]
+Integer randomId(Integer fromId, Integer toId)
+{
+   return leanstore::utils::RandomGenerator::getRand(fromId, toId + 1);
+}
+
 // [low, high]
-Integer uRand(Integer low, Integer high)
+Integer urand(Integer low, Integer high)
 {
    return rnd(high - low + 1) + low;
 }
 
-// [fromId, toId]
-Integer randomId(Integer fromId, Integer toId)
-{
-   return uRand(fromId, toId);
-}
-
-Integer uRandExcept(Integer low, Integer high, Integer v)
+Integer urandexcept(Integer low, Integer high, Integer v)
 {
    if (high <= low)
       return low;
-   Integer r = uRand(low, high - 1);
+   Integer r = rnd(high - low) + low;
    if (r >= v)
       return r + 1;
    else
       return r;
 }
 
-Integer nURand(Integer A, Integer x, Integer y, Integer C = 42)
-{
-   // TPC-C random is [a,b] inclusive
-   // in standard: NURand(A, x, y) = (((random(0, A) | random(x, y)) + C) % (y - x + 1)) + x
-   return (((uRand(0, A) | uRand(x, y)) + C) % (y - x + 1)) + x;
-}
-
-// 0-9A-Za-z
 template <int maxLength>
-Varchar<maxLength> randomASCIIString(Integer minLenStr, Integer maxLenStr)
+Varchar<maxLength> randomastring(Integer minLenStr, Integer maxLenStr)
 {
    assert(maxLenStr <= maxLength);
-   Integer len = uRand(minLenStr, maxLenStr);
+   Integer len = rnd(maxLenStr - minLenStr + 1) + minLenStr;
    Varchar<maxLength> result;
    for (Integer index = 0; index < len; index++) {
       Integer i = rnd(62);
-      if (i < 10)  // 0-9
+      if (i < 10)
          result.append(48 + i);
-      else if (i < 36)  // A-Z
+      else if (i < 36)
          result.append(64 - 10 + i);
-      else  // a-z
+      else
          result.append(96 - 36 + i);
    }
    return result;
 }
 
-template <int maxLength>
-Varchar<maxLength> randomASCIIStringMaybeOriginal(Integer minLenStr, Integer maxLenStr)
+Varchar<16> randomnstring(Integer minLenStr, Integer maxLenStr)
 {
-   Varchar<maxLength> data = randomASCIIString<maxLength>(minLenStr, maxLenStr);
-   if (rnd(10) == 0) {
-      data.length = rnd(data.length - 8);
-      data = data || Varchar<10>("ORIGINAL");
-   }
-   return data;
-}
-// 0-9
-Varchar<16> randomNumString(Integer minLenStr, Integer maxLenStr)
-{
-   assert(maxLenStr <= 16);
-   Integer len = uRand(minLenStr, maxLenStr);
+   Integer len = rnd(maxLenStr - minLenStr + 1) + minLenStr;
    Varchar<16> result;
    for (Integer i = 0; i < len; i++)
-      result.append(48 + rnd(10));  // 0-9
+      result.append(48 + rnd(10));
    return result;
 }
 
-/**
- * @brief Returns namePart from list of Strings.
- *
- * @param id position in list of Strings to take
- * @return Varchar<16> VarChar representation of String
- */
 Varchar<16> namePart(Integer id)
 {
    assert(id < 10);
@@ -113,12 +77,6 @@ Varchar<16> namePart(Integer id)
    return data[id];
 }
 
-/**
- * @brief Generate name from partStrings.
- *
- * @param id id for which to generate name
- * @return Varchar<16> Varchar representation of the name
- */
 Varchar<16> genName(Integer id)
 {
    return namePart((id / 100) % 10) || namePart((id / 10) % 10) || namePart(id % 10);
@@ -131,7 +89,7 @@ Numeric randomNumeric(Numeric min, Numeric max)
    return min + (leanstore::utils::RandomGenerator::getRandU64() / div);
 }
 
-Varchar<9> randomZip()
+Varchar<9> randomzip()
 {
    Integer id = rnd(10000);
    Varchar<9> result;
@@ -142,63 +100,78 @@ Varchar<9> randomZip()
    return result || Varchar<9>("11111");
 }
 
+Integer nurand(Integer a, Integer x, Integer y, Integer C = 42)
+{
+   // TPC-C random is [a,b] inclusive
+   // in standard: NURand(A, x, y) = (((random(0, A) | random(x, y)) + C) % (y - x + 1)) + x
+   // return (((rnd(a + 1) | rnd((y - x + 1) + x)) + 42) % (y - x + 1)) + x;
+   return (((urand(0, a) | urand(x, y)) + C) % (y - x + 1)) + x;
+   // incorrect: return (((rnd(a) | rnd((y - x + 1) + x)) + 42) % (y - x + 1)) + x;
+}
+
 inline Integer getItemID()
 {
    // OL_I_ID_C
-   return nURand(8191, 1, ITEMS_NO, OL_I_ID_C);
+   return nurand(8191, 1, ITEMS_NO, OL_I_ID_C);
 }
 inline Integer getCustomerID()
 {
    // C_ID_C
-   return nURand(1023, 1, 3000, C_ID_C);
+   return nurand(1023, 1, 3000, C_ID_C);
+   // return urand(1, 3000);
 }
 inline Integer getNonUniformRandomLastNameForRun()
 {
    // C_LAST_RUN_C
-   return nURand(255, 0, 999, C_LAST_RUN_C);
+   return nurand(255, 0, 999, C_LAST_RUN_C);
 }
 inline Integer getNonUniformRandomLastNameForLoad()
 {
    // C_LAST_LOAD_C
-   return nURand(255, 0, 999, C_LAST_LOAD_C);
+   return nurand(255, 0, 999, C_LAST_LOAD_C);
 }
-
 // -------------------------------------------------------------------------------------
-// Functions to add data to dataset e.g. initialize dataset
 // -------------------------------------------------------------------------------------
-
+// -------------------------------------------------------------------------------------
 void loadItem()
 {
    for (Integer i = 1; i <= ITEMS_NO; i++) {
-      item.insert({i}, {randomId(1, 10000), randomASCIIString<24>(14, 24), randomNumeric(1.00, 100.00), randomASCIIStringMaybeOriginal<50>(25, 50)});
+      Varchar<50> i_data = randomastring<50>(25, 50);
+      if (rnd(10) == 0) {
+         i_data.length = rnd(i_data.length - 8);
+         i_data = i_data || Varchar<10>("ORIGINAL");
+      }
+      item.insert({i}, {randomId(1, 10000), randomastring<24>(14, 24), randomNumeric(1.00, 100.00), i_data});
    }
 }
 
 void loadWarehouse()
 {
    for (Integer i = 0; i < warehouseCount; i++) {
-      warehouse.insert({i + 1}, {randomASCIIString<10>(6, 10), randomASCIIString<20>(10, 20), randomASCIIString<20>(10, 20),
-                                 randomASCIIString<20>(10, 20), randomASCIIString<2>(2, 2), randomZip(), randomNumeric(0.1000, 0.2000), 3000000});
+      warehouse.insert({i + 1}, {randomastring<10>(6, 10), randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
+                                 randomastring<2>(2, 2), randomzip(), randomNumeric(0.1000, 0.2000), 3000000});
    }
 }
 
 void loadStock(Integer w_id)
 {
    for (Integer i = 0; i < ITEMS_NO; i++) {
-      stock.insert({w_id, i + 1},
-                   {randomNumeric(10, 100), randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24),
-                    randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24),
-                    randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24), randomASCIIString<24>(24, 24), 0, 0, 0,
-                    randomASCIIStringMaybeOriginal<50>(25, 50)});
+      Varchar<50> s_data = randomastring<50>(25, 50);
+      if (rnd(10) == 0) {
+         s_data.length = rnd(s_data.length - 8);
+         s_data = s_data || Varchar<10>("ORIGINAL");
+      }
+      stock.insert({w_id, i + 1}, {randomNumeric(10, 100), randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24),
+                                   randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24),
+                                   randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24), 0, 0, 0, s_data});
    }
 }
 
-void loadDistrict(Integer w_id)
+void loadDistrinct(Integer w_id)
 {
    for (Integer i = 1; i < 11; i++) {
-      district.insert({w_id, i},
-                      {randomASCIIString<10>(6, 10), randomASCIIString<20>(10, 20), randomASCIIString<20>(10, 20), randomASCIIString<20>(10, 20),
-                       randomASCIIString<2>(2, 2), randomZip(), randomNumeric(0.0000, 0.2000), 3000000, 3001});
+      district.insert({w_id, i}, {randomastring<10>(6, 10), randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
+                                  randomastring<2>(2, 2), randomzip(), randomNumeric(0.0000, 0.2000), 3000000, 3001});
    }
 }
 
@@ -216,15 +189,15 @@ void loadCustomer(Integer w_id, Integer d_id)
          c_last = genName(i);
       else
          c_last = genName(getNonUniformRandomLastNameForLoad());
-      Varchar<16> c_first = randomASCIIString<16>(8, 16);
-      customer.insert({w_id, d_id, i + 1},
-                      {c_first, "OE", c_last, randomASCIIString<20>(10, 20), randomASCIIString<20>(10, 20), randomASCIIString<20>(10, 20),
-                       randomASCIIString<2>(2, 2), randomZip(), randomNumString(16, 16), now, Varchar<2>(rnd(10) ? "GC" : "BC"), 50000.00,
-                       randomNumeric(0.0000, 0.5000), -10.00, 1, 0, 0, randomASCIIString<500>(300, 500)});
+      Varchar<16> c_first = randomastring<16>(8, 16);
+      Varchar<2> c_credit(rnd(10) ? "GC" : "BC");
+      customer.insert({w_id, d_id, i + 1}, {c_first, "OE", c_last, randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
+                                            randomastring<2>(2, 2), randomzip(), randomnstring(16, 16), now, c_credit, 50000.00,
+                                            randomNumeric(0.0000, 0.5000), -10.00, 1, 0, 0, randomastring<500>(300, 500)});
       customerwdl.insert({w_id, d_id, c_last, c_first}, {i + 1});
       Integer t_id = (Integer)WorkerCounters::myCounters().t_id;
       Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
-      history.insert({t_id, h_id}, {i + 1, d_id, w_id, d_id, w_id, now, 10.00, randomASCIIString<24>(12, 24)});
+      history.insert({t_id, h_id}, {i + 1, d_id, w_id, d_id, w_id, now, 10.00, randomastring<24>(12, 24)});
    }
 }
 
@@ -251,7 +224,7 @@ void loadOrders(Integer w_id, Integer d_id)
             ol_delivery_d = now;
          Numeric ol_amount = (o_id < 2101) ? 0 : randomNumeric(0.01, 9999.99);
          const Integer ol_i_id = rnd(ITEMS_NO) + 1;
-         orderline.insert({w_id, d_id, o_id, ol_number}, {ol_i_id, w_id, ol_delivery_d, 5, ol_amount, randomASCIIString<24>(24, 24)});
+         orderline.insert({w_id, d_id, o_id, ol_number}, {ol_i_id, w_id, ol_delivery_d, 5, ol_amount, randomastring<24>(24, 24)});
       }
       o_id++;
    }
@@ -260,30 +233,29 @@ void loadOrders(Integer w_id, Integer d_id)
       neworder.insert({w_id, d_id, i}, {});
 }
 
-// -------------------------------------------------------------------------------------
-// Functions to execute operations on data
-// -------------------------------------------------------------------------------------
-// Order
-// -------------------------------------------------------------------------------------
-
-void getNewOrderId(const Integer w_id, const Integer d_id, Numeric& d_tax, Integer& o_id)
+// run
+void newOrder(Integer w_id,
+              Integer d_id,
+              Integer c_id,
+              const vector<Integer>& lineNumbers,
+              const vector<Integer>& supwares,
+              const vector<Integer>& itemids,
+              const vector<Integer>& qtys,
+              Timestamp timestamp)
 {
+   Numeric w_tax = warehouse.lookupField({w_id}, &warehouse_t::w_tax);
+   Numeric c_discount = customer.lookupField({w_id, d_id, c_id}, &customer_t::c_discount);
+   Numeric d_tax;
+   Integer o_id;
+
    district.update1(
        {w_id, d_id},
        [&](district_t& rec) {
           d_tax = rec.d_tax;
           o_id = rec.d_next_o_id++;
-       });
-}
+       },
+       WALUpdate1(district_t, d_next_o_id));
 
-void insertOrder(const Integer w_id,
-                 const Integer d_id,
-                 const Integer c_id,
-                 const Integer o_id,
-                 const vector<Integer>& lineNumbers,
-                 const vector<Integer>& supwares,
-                 const Timestamp timestamp)
-{
    Numeric all_local = 1;
    for (Integer sw : supwares)
       if (sw != w_id)
@@ -295,14 +267,7 @@ void insertOrder(const Integer w_id,
       order_wdc.insert({w_id, d_id, c_id, o_id}, {});
    }
    neworder.insert({w_id, d_id, o_id}, {});
-}
 
-void updateStock(const Integer w_id,
-                 const vector<Integer>& lineNumbers,
-                 const vector<Integer>& supwares,
-                 const vector<Integer>& itemids,
-                 const vector<Integer>& qtys)
-{
    for (unsigned i = 0; i < lineNumbers.size(); i++) {
       Integer qty = qtys[i];
       stock.update1(
@@ -313,22 +278,9 @@ void updateStock(const Integer w_id,
              rec.s_remote_cnt += (supwares[i] != w_id);
              rec.s_order_cnt++;
              rec.s_ytd += qty;
-          });
+          },
+          WALUpdate3(stock_t, s_remote_cnt, s_order_cnt, s_ytd));
    }
-}
-
-void updateOrderline(const Integer w_id,
-                     const Integer d_id,
-                     const Integer c_id,
-                     const Integer o_id,
-                     const Integer d_tax,
-                     const vector<Integer>& lineNumbers,
-                     const vector<Integer>& supwares,
-                     const vector<Integer>& itemids,
-                     const vector<Integer>& qtys)
-{
-   Numeric c_discount = customer.lookupField({w_id, d_id, c_id}, &customer_t::c_discount);
-   Numeric w_tax = warehouse.lookupField({w_id}, &warehouse_t::w_tax);
 
    for (unsigned i = 0; i < lineNumbers.size(); i++) {
       Integer lineNumber = lineNumbers[i];
@@ -382,183 +334,123 @@ void updateOrderline(const Integer w_id,
    }
 }
 
-void newOrder(Integer w_id,
-              Integer d_id,
-              Integer c_id,
-              const vector<Integer>& lineNumbers,
-              const vector<Integer>& supwares,
-              const vector<Integer>& itemids,
-              const vector<Integer>& qtys,
-              Timestamp timestamp)
+void newOrderRnd(Integer w_id)
 {
-   Numeric d_tax;
-   Integer o_id;
+   Integer d_id = urand(1, 10);
+   Integer c_id = getCustomerID();
+   Integer ol_cnt = urand(5, 15);
 
-   getNewOrderId(w_id, d_id, d_tax, o_id);
-
-   insertOrder(w_id, d_id, c_id, o_id, lineNumbers, supwares, timestamp);
-
-   updateStock(w_id, lineNumbers, supwares, itemids, qtys);
-
-   updateOrderline(w_id, d_id, c_id, o_id, d_tax, lineNumbers, supwares, itemids, qtys);
-}
-
-void generateRndOrderData(const Integer w_id,
-                          Integer& d_id,
-                          Integer& c_id,
-                          vector<Integer>& lineNumbers,
-                          vector<Integer>& supwares,
-                          vector<Integer>& itemids,
-                          vector<Integer>& qtys)
-{
-   d_id = uRand(1, 10);
-   c_id = getCustomerID();
-   Integer ol_cnt = uRand(5, 15);
-
+   vector<Integer> lineNumbers;
    lineNumbers.reserve(15);
+   vector<Integer> supwares;
    supwares.reserve(15);
+   vector<Integer> itemids;
    itemids.reserve(15);
+   vector<Integer> qtys;
    qtys.reserve(15);
    for (Integer i = 1; i <= ol_cnt; i++) {
       Integer supware = w_id;
-      if (uRand(1, 100) == 1)  // remote transaction
-         supware = uRandExcept(1, warehouseCount, w_id);
+      if (urand(1, 100) == 1)  // remote transaction
+         supware = urandexcept(1, warehouseCount, w_id);
       Integer itemid = getItemID();
-      if (false && (i == ol_cnt) && (uRand(1, 100) == 1))  // invalid item => random
+      if (false && (i == ol_cnt) && (urand(1, 100) == 1))  // invalid item => random
          itemid = 0;
       lineNumbers.push_back(i);
       supwares.push_back(supware);
       itemids.push_back(itemid);
-      qtys.push_back(uRand(1, 10));
+      qtys.push_back(urand(1, 10));
    }
-}
-
-void newOrderRnd(Integer w_id)
-{
-   Integer d_id, c_id;
-   vector<Integer> lineNumbers, supwares, itemids, qtys;
-   generateRndOrderData(w_id, d_id, c_id, lineNumbers, supwares, itemids, qtys);
    newOrder(w_id, d_id, c_id, lineNumbers, supwares, itemids, qtys, currentTimestamp());
-}
-
-// -------------------------------------------------------------------------------------
-// Delivery
-// -------------------------------------------------------------------------------------
-
-void getOrderToProcess(const Integer w_id, const Integer d_id, Integer& o_id)
-{
-   neworder.scan(
-       {w_id, d_id, minInteger},
-       [&](const neworder_t::Key& key, const neworder_t&) {
-          if (key.no_w_id == w_id && key.no_d_id == d_id) {
-             o_id = key.no_o_id;
-          }
-          return false;
-       },
-       [&]() { o_id = minInteger; });
-   if (o_id == minInteger)
-      return;
-   if (FLAGS_tpcc_remove) {
-      const auto ret = neworder.erase({w_id, d_id, o_id});
-      ensure(ret);
-   }
-}
-
-bool getOrderDetails(const Integer w_id, const Integer d_id, const Integer o_id, const Integer carrier_id, Integer& ol_cnt, Integer& c_id)
-{
-   bool is_safe_to_continue = false;
-   order.scan(
-       {w_id, d_id, o_id},
-       [&](const order_t::Key& key, const order_t& rec) {
-          if (key.o_w_id == w_id && key.o_d_id == d_id && key.o_id == o_id) {
-             is_safe_to_continue = true;
-             ol_cnt = rec.o_ol_cnt;
-             c_id = rec.o_c_id;
-          } else {
-             is_safe_to_continue = false;
-          }
-          return false;
-       },
-       [&]() { is_safe_to_continue = false; });
-   if (!is_safe_to_continue)
-      return is_safe_to_continue;
-   order.update1(
-       {w_id, d_id, o_id}, [&](order_t& rec) { rec.o_carrier_id = carrier_id; });
-   return is_safe_to_continue;
-}
-
-bool processOrderedItems(const Integer w_id, const Integer d_id, const Integer o_id, const Integer ol_cnt, const Timestamp datetime, Numeric& ol_total)
-{
-   bool is_safe_to_continue = false;
-   // First check if all orderlines have been inserted, a hack because of the missing transaction and concurrency control
-   orderline.scan(
-       {w_id, d_id, o_id, ol_cnt},
-       [&](const orderline_t::Key& key, const orderline_t&) {
-          if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id && key.ol_number == ol_cnt) {
-             is_safe_to_continue = true;
-          } else {
-             is_safe_to_continue = false;
-          }
-          return false;
-       },
-       [&]() { is_safe_to_continue = false; });
-   if (!is_safe_to_continue)
-      return is_safe_to_continue;
-   // -------------------------------------------------------------------------------------
-   for (Integer ol_number = 1; ol_number <= ol_cnt; ol_number++) {
-      orderline.update1(
-          {w_id, d_id, o_id, ol_number},
-          [&](orderline_t& rec) {
-             ol_total += rec.ol_amount;
-             rec.ol_delivery_d = datetime;
-          });
-   }
-   return is_safe_to_continue;
-}
-
-void updateCustomer(const Integer w_id, const Integer d_id, const Integer c_id, const Numeric ol_total)
-{
-   customer.update1(
-       {w_id, d_id, c_id},
-       [&](customer_t& rec) {
-          rec.c_balance += ol_total;
-          rec.c_delivery_cnt++;
-       });
 }
 
 void delivery(Integer w_id, Integer carrier_id, Timestamp datetime)
 {
    for (Integer d_id = 1; d_id <= 10; d_id++) {
       Integer o_id = minInteger;
-      getOrderToProcess(w_id, d_id, o_id);
+      neworder.scan(
+          {w_id, d_id, minInteger},
+          [&](const neworder_t::Key& key, const neworder_t&) {
+             if (key.no_w_id == w_id && key.no_d_id == d_id) {
+                o_id = key.no_o_id;
+             }
+             return false;
+          },
+          [&]() { o_id = minInteger; });
       if (o_id == minInteger)
          continue;
+      // -------------------------------------------------------------------------------------
+      if (FLAGS_tpcc_remove) {
+         const auto ret = neworder.erase({w_id, d_id, o_id});
+         ensure(!FLAGS_si || ret);
+      }
+      // -------------------------------------------------------------------------------------
       // Integer ol_cnt = minInteger, c_id;
       // order.scan({w_id, d_id, o_id}, [&](const order_t& rec) { ol_cnt = rec.o_ol_cnt; c_id = rec.o_c_id; return false; });
       // if (ol_cnt == minInteger)
       // continue;
       Integer ol_cnt, c_id;
-      if (!getOrderDetails(w_id, d_id, o_id, carrier_id, ol_cnt, c_id))
-         continue;
 
+      bool is_safe_to_continue = false;
+      order.scan(
+          {w_id, d_id, o_id},
+          [&](const order_t::Key& key, const order_t& rec) {
+             if (key.o_w_id == w_id && key.o_d_id == d_id && key.o_id == o_id) {
+                is_safe_to_continue = true;
+                ol_cnt = rec.o_ol_cnt;
+                c_id = rec.o_c_id;
+             } else {
+                is_safe_to_continue = false;
+             }
+             return false;
+          },
+          [&]() { is_safe_to_continue = false; });
+      if (!is_safe_to_continue)
+         continue;
+      order.update1(
+          {w_id, d_id, o_id}, [&](order_t& rec) { rec.o_carrier_id = carrier_id; }, WALUpdate1(order_t, o_carrier_id));
+      // -------------------------------------------------------------------------------------
+      // First check if all orderlines have been inserted, a hack because of the missing transaction and concurrency control
+      orderline.scan(
+          {w_id, d_id, o_id, ol_cnt},
+          [&](const orderline_t::Key& key, const orderline_t&) {
+             if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id && key.ol_number == ol_cnt) {
+                is_safe_to_continue = true;
+             } else {
+                is_safe_to_continue = false;
+             }
+             return false;
+          },
+          [&]() { is_safe_to_continue = false; });
+      if (!is_safe_to_continue) {
+         continue;
+      }
+      // -------------------------------------------------------------------------------------
       Numeric ol_total = 0;
+      for (Integer ol_number = 1; ol_number <= ol_cnt; ol_number++) {
+         orderline.update1(
+             {w_id, d_id, o_id, ol_number},
+             [&](orderline_t& rec) {
+                ol_total += rec.ol_amount;
+                rec.ol_delivery_d = datetime;
+             },
+             WALUpdate1(orderline_t, ol_delivery_d));
+      }
 
-      if (!processOrderedItems(w_id, d_id, o_id, ol_cnt, datetime, ol_total))
-         continue;
-
-      updateCustomer(w_id, d_id, c_id, ol_total);
+      customer.update1(
+          {w_id, d_id, c_id},
+          [&](customer_t& rec) {
+             rec.c_balance += ol_total;
+             rec.c_delivery_cnt++;
+          },
+          WALUpdate2(customer_t, c_balance, c_delivery_cnt));
    }
 }
 
 void deliveryRnd(Integer w_id)
 {
-   Integer carrier_id = uRand(1, 10);
+   Integer carrier_id = urand(1, 10);
    delivery(w_id, carrier_id, currentTimestamp());
 }
-
-// -------------------------------------------------------------------------------------
-// StockLevel
-// -------------------------------------------------------------------------------------
 
 void stockLevel(Integer w_id, Integer d_id, Integer threshold)
 {
@@ -570,11 +462,11 @@ void stockLevel(Integer w_id, Integer d_id, Integer threshold)
    /*
     * http://www.tpc.org/tpc_documents_current_versions/pdf/tpc-c_v5.11.0.pdf P 116
     * EXEC SQL SELECT COUNT(DISTINCT (s_i_id)) INTO :stock_count
-    * FROM order_line, stock
-    * WHERE ol_w_id=:w_id AND
-    * ol_d_id=:d_id AND ol_o_id<:o_id AND
-    * ol_o_id>=:o_id-20 AND s_w_id=:w_id AND
-    * s_i_id=ol_i_id AND s_quantity < :threshold;
+ FROM order_line, stock
+ WHERE ol_w_id=:w_id AND
+ ol_d_id=:d_id AND ol_o_id<:o_id AND
+ ol_o_id>=:o_id-20 AND s_w_id=:w_id AND
+ s_i_id=ol_i_id AND s_quantity < :threshold;
     */
    vector<Integer> items;
    items.reserve(100);
@@ -600,14 +492,10 @@ void stockLevel(Integer w_id, Integer d_id, Integer threshold)
 
 void stockLevelRnd(Integer w_id)
 {
-   stockLevel(w_id, uRand(1, 10), uRand(10, 20));
+   stockLevel(w_id, urand(1, 10), urand(10, 20));
 }
 
-// -------------------------------------------------------------------------------------
-// orderStatus
-// -------------------------------------------------------------------------------------
-
-void lookupCustomer(const Integer w_id, const Integer d_id, const Integer c_id)
+void orderStatusId(Integer w_id, Integer d_id, Integer c_id)
 {
    Varchar<16> c_first;
    Varchar<2> c_middle;
@@ -620,11 +508,90 @@ void lookupCustomer(const Integer w_id, const Integer d_id, const Integer c_id)
       c_balance = rec.c_balance;
    });
 
+   Integer o_id = -1;
+   // -------------------------------------------------------------------------------------
+   // latest order id desc
+   if (FLAGS_order_wdc_index) {
+      order_wdc.scanDesc(
+          {w_id, d_id, c_id, std::numeric_limits<Integer>::max()},
+          [&](const order_wdc_t::Key& key, const order_wdc_t&) {
+             assert(key.o_w_id == w_id);
+             assert(key.o_d_id == d_id);
+             assert(key.o_c_id == c_id);
+             o_id = key.o_id;
+             return false;
+          },
+          [] {});
+   } else {
+      order.scanDesc(
+          {w_id, d_id, std::numeric_limits<Integer>::max()},
+          [&](const order_t::Key& key, const order_t& rec) {
+             if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
+                o_id = key.o_id;
+                return false;
+             }
+             return true;
+          },
+          [&]() {});
+   }
+   ensure(o_id > -1);
+   // -------------------------------------------------------------------------------------
+   Timestamp o_entry_d;
+   Integer o_carrier_id;
+
+   order.lookup1({w_id, d_id, o_id}, [&](const order_t& rec) {
+      o_entry_d = rec.o_entry_d;
+      o_carrier_id = rec.o_carrier_id;
+   });
+   Integer ol_i_id;
+   Integer ol_supply_w_id;
+   Timestamp ol_delivery_d;
+   Numeric ol_quantity;
+   Numeric ol_amount;
+   {
+      // AAA: expensive
+      orderline.scan(
+          {w_id, d_id, o_id, minInteger},
+          [&](const orderline_t::Key& key, const orderline_t& rec) {
+             if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
+                ol_i_id = rec.ol_i_id;
+                ol_supply_w_id = rec.ol_supply_w_id;
+                ol_delivery_d = rec.ol_delivery_d;
+                ol_quantity = rec.ol_quantity;
+                ol_amount = rec.ol_amount;
+                return true;
+             }
+             return false;
+          },
+          [&]() {
+             // NOTHING
+          });
+   }
 }
 
-Integer lookupLatestOrderIdDesc(const Integer w_id, const Integer d_id, const Integer c_id)
+void orderStatusName(Integer w_id, Integer d_id, Varchar<16> c_last)
 {
+   vector<Integer> ids;
+   customerwdl.scan(
+       {w_id, d_id, c_last, {}},
+       [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
+          if (key.c_w_id == w_id && key.c_d_id == d_id && key.c_last == c_last) {
+             ids.push_back(rec.c_id);
+             return true;
+          }
+          return false;
+       },
+       [&]() { ids.clear(); });
+   unsigned c_count = ids.size();
+   if (c_count == 0)
+      return;  // TODO: rollback
+   unsigned index = c_count / 2;
+   if ((c_count % 2) == 0)
+      index -= 1;
+   Integer c_id = ids[index];
+
    Integer o_id = -1;
+   // latest order id desc
    if (FLAGS_order_wdc_index) {
       order_wdc.scanDesc(
           {w_id, d_id, c_id, std::numeric_limits<Integer>::max()},
@@ -649,50 +616,8 @@ Integer lookupLatestOrderIdDesc(const Integer w_id, const Integer d_id, const In
           [&]() {});
       ensure(o_id > -1);
    }
-   return o_id;
-}
-
-void lookupOrder(const Integer w_id, const Integer d_id, const Integer o_id){
-   Timestamp o_entry_d;
-   Integer o_carrier_id;
-
-   order.lookup1({w_id, d_id, o_id}, [&](const order_t& rec) {
-      o_entry_d = rec.o_entry_d;
-      o_carrier_id = rec.o_carrier_id;
-   });
-
-}
-
-void lookupOrderLine(const Integer w_id, const Integer d_id, const Integer o_id){
-   Integer ol_i_id;
-   Integer ol_supply_w_id;
+   // -------------------------------------------------------------------------------------
    Timestamp ol_delivery_d;
-   Numeric ol_quantity;
-   Numeric ol_amount;
-
-   // AAA: expensive
-   orderline.scan(
-       {w_id, d_id, o_id, minInteger},
-       [&](const orderline_t::Key& key, const orderline_t& rec) {
-          if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
-             ol_i_id = rec.ol_i_id;
-             ol_supply_w_id = rec.ol_supply_w_id;
-             ol_delivery_d = rec.ol_delivery_d;
-             ol_quantity = rec.ol_quantity;
-             ol_amount = rec.ol_amount;
-             return true;
-          }
-          return false;
-       },
-       [&]() {
-          // NOTHING
-       });
-
-}
-
-void lookupOrderLine2(const Integer w_id, const Integer d_id, const Integer o_id){
-   Timestamp ol_delivery_d;
-   // AAA: expensive
    orderline.scan(
        {w_id, d_id, o_id, minInteger},
        [&](const orderline_t::Key& key, const orderline_t& rec) {
@@ -702,75 +627,24 @@ void lookupOrderLine2(const Integer w_id, const Integer d_id, const Integer o_id
           }
           return false;
        },
-       [&]() {
+       []() {
           // NOTHING
        });
-}
-
-void orderStatusId(Integer w_id, Integer d_id, Integer c_id)
-{
-   lookupCustomer(w_id, d_id, c_id);
-   Integer o_id = lookupLatestOrderIdDesc(w_id, d_id, c_id);
-   lookupOrder(w_id, d_id, o_id);
-   lookupOrderLine(w_id, d_id, o_id);
-}
-
-vector<Integer> lookupCustomerId(const Integer w_id, const Integer d_id, const Varchar<16> c_last)
-{
-   vector<Integer> ids;
-   customerwdl.scan(
-       {w_id, d_id, c_last, {}},
-       [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
-          if (key.c_w_id == w_id && key.c_d_id == d_id && key.c_last == c_last) {
-             ids.push_back(rec.c_id);
-             return true;
-          }
-          return false;
-       },
-       [&]() { ids.clear(); });
-   return ids;
-}
-/**
- * @brief Pick floor(len(ids)/2) customer_id
- * 
- * @param ids Vector of ids
- * @return Integer Id of picked customer
- */
-Integer pickCustomer(vector<Integer>& ids)
-{
-   unsigned c_count = ids.size();
-   unsigned index = c_count / 2;
-   if ((c_count % 2) == 0)
-      index -= 1;
-   return ids[index];
-}
-
-void orderStatusName(Integer w_id, Integer d_id, Varchar<16> c_last)
-{
-   vector<Integer> ids = lookupCustomerId(w_id, d_id, c_last);
-   if (ids.size() == 0)
-      return;  // TODO: rollback
-   Integer c_id = pickCustomer(ids);
-
-   Integer o_id = lookupLatestOrderIdDesc(w_id, d_id, c_id);
-   lookupOrderLine2(w_id, d_id, o_id);
 }
 
 void orderStatusRnd(Integer w_id)
 {
-   Integer d_id = uRand(1, 10);
-   if (uRand(1, 100) <= 40) {
+   Integer d_id = urand(1, 10);
+   if (urand(1, 100) <= 40) {
       orderStatusId(w_id, d_id, getCustomerID());
    } else {
       orderStatusName(w_id, d_id, genName(getNonUniformRandomLastNameForRun()));
    }
 }
 
-// -------------------------------------------------------------------------------------
-// Payment
-// -------------------------------------------------------------------------------------
-
-void lookupWarehouseName(const Integer w_id, Varchar<10>& w_name){
+void paymentById(Integer w_id, Integer d_id, Integer c_w_id, Integer c_d_id, Integer c_id, Timestamp h_date, Numeric h_amount, Timestamp datetime)
+{
+   Varchar<10> w_name;
    Varchar<20> w_street_1;
    Varchar<20> w_street_2;
    Varchar<20> w_city;
@@ -786,9 +660,9 @@ void lookupWarehouseName(const Integer w_id, Varchar<10>& w_name){
       w_zip = rec.w_zip;
       w_ytd = rec.w_ytd;
    });
-}
-
-void lookupDistrictName(const Integer w_id, const Integer d_id, Varchar<10>& d_name){
+   warehouse.update1(
+       {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; }, WALUpdate1(warehouse_t, w_ytd));
+   Varchar<10> d_name;
    Varchar<20> d_street_1;
    Varchar<20> d_street_2;
    Varchar<20> d_city;
@@ -804,19 +678,9 @@ void lookupDistrictName(const Integer w_id, const Integer d_id, Varchar<10>& d_n
       d_zip = rec.d_zip;
       d_ytd = rec.d_ytd;
    });
+   district.update1(
+       {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; }, WALUpdate1(district_t, d_ytd));
 
-}
-
-void updateCustomerPayment(const Integer w_id,
-                           const Integer d_id,
-                           const Integer c_w_id,
-                           const Integer c_d_id,
-                           const Integer c_id,
-                           Timestamp h_date,
-                           Numeric h_amount,
-                           Varchar<10> w_name,
-                           Varchar<10> d_name)
-{
    Varchar<500> c_data;
    Varchar<2> c_credit;
    Numeric c_balance;
@@ -835,12 +699,8 @@ void updateCustomerPayment(const Integer w_id,
 
    if (c_credit == "BC") {
       Varchar<500> c_new_data;
-      auto numChars = snprintf(c_new_data.data, 500,
-                               "| %4d %2d %4d %2d %4d $%7.2f %lu %s%s %s",
-                               c_id, c_d_id, c_w_id, d_id, w_id, h_amount, h_date,
-                               w_name.toString().c_str(),
-                               d_name.toString().c_str(),
-                               c_data.toString().c_str());
+      auto numChars = snprintf(c_new_data.data, 500, "| %4d %2d %4d %2d %4d $%7.2f %lu %s%s %s", c_id, c_d_id, c_w_id, d_id, w_id, h_amount, h_date,
+                               w_name.toString().c_str(), d_name.toString().c_str(), c_data.toString().c_str());
       c_new_data.length = numChars;
       if (c_new_data.length > 500)
          c_new_data.length = 500;
@@ -851,7 +711,8 @@ void updateCustomerPayment(const Integer w_id,
              rec.c_balance = c_new_balance;
              rec.c_ytd_payment = c_new_ytd_payment;
              rec.c_payment_cnt = c_new_payment_cnt;
-          });
+          },
+          WALUpdate4(customer_t, c_data, c_balance, c_ytd_payment, c_payment_cnt));
    } else {
       customer.update1(
           {c_w_id, c_d_id, c_id},
@@ -859,42 +720,14 @@ void updateCustomerPayment(const Integer w_id,
              rec.c_balance = c_new_balance;
              rec.c_ytd_payment = c_new_ytd_payment;
              rec.c_payment_cnt = c_new_payment_cnt;
-          });
+          },
+          WALUpdate3(customer_t, c_balance, c_ytd_payment, c_payment_cnt));
    }
-}
 
-void logPayment(Integer w_id,
-                Integer d_id,
-                Integer c_w_id,
-                Integer c_d_id,
-                Integer c_id,
-                Numeric h_amount,
-                Timestamp datetime,
-                Varchar<10> w_name,
-                Varchar<10> d_name)
-
-{
    Varchar<24> h_new_data = Varchar<24>(w_name) || Varchar<24>("    ") || d_name;
    Integer t_id = (Integer)WorkerCounters::myCounters().t_id.load();
    Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
    history.insert({t_id, h_id}, {c_id, c_d_id, c_w_id, d_id, w_id, datetime, h_amount, h_new_data});
-
-}
-
-void paymentById(Integer w_id, Integer d_id, Integer c_w_id, Integer c_d_id, Integer c_id, Timestamp h_date, Numeric h_amount, Timestamp datetime)
-{
-   Varchar<10> w_name;
-   lookupWarehouseName(w_id, w_name);
-   warehouse.update1(
-       {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; });
-
-   Varchar<10> d_name;
-   lookupDistrictName(w_id, d_id, d_name);
-   district.update1(
-       {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; });
-
-   updateCustomerPayment(w_id, d_id, c_w_id, c_d_id, c_id, h_date, h_amount, w_name, d_name);
-   logPayment(w_id, d_id, c_w_id, c_d_id, c_id, h_amount, datetime, w_name, d_name);
 }
 
 void paymentByName(Integer w_id,
@@ -906,70 +739,157 @@ void paymentByName(Integer w_id,
                    Numeric h_amount,
                    Timestamp datetime)
 {
+   Varchar<10> w_name;
+   Varchar<20> w_street_1;
+   Varchar<20> w_street_2;
+   Varchar<20> w_city;
+   Varchar<2> w_state;
+   Varchar<9> w_zip;
+   Numeric w_ytd;
+   warehouse.lookup1({w_id}, [&](const warehouse_t& rec) {
+      w_name = rec.w_name;
+      w_street_1 = rec.w_street_1;
+      w_street_2 = rec.w_street_2;
+      w_city = rec.w_city;
+      w_state = rec.w_state;
+      w_zip = rec.w_zip;
+      w_ytd = rec.w_ytd;
+   });
+
+   warehouse.update1(
+       {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; }, WALUpdate1(warehouse_t, w_ytd));
+   Varchar<10> d_name;
+   Varchar<20> d_street_1;
+   Varchar<20> d_street_2;
+   Varchar<20> d_city;
+   Varchar<2> d_state;
+   Varchar<9> d_zip;
+   Numeric d_ytd;
+   district.lookup1({w_id, d_id}, [&](const district_t& rec) {
+      d_name = rec.d_name;
+      d_street_1 = rec.d_street_1;
+      d_street_2 = rec.d_street_2;
+      d_city = rec.d_city;
+      d_state = rec.d_state;
+      d_zip = rec.d_zip;
+      d_ytd = rec.d_ytd;
+   });
+   district.update1(
+       {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; }, WALUpdate1(district_t, d_ytd));
+
    // Get customer id by name
-   vector<Integer> ids = lookupCustomerId(w_id, d_id, c_last);
-   if (ids.size() == 0)
+   vector<Integer> ids;
+   customerwdl.scan(
+       {c_w_id, c_d_id, c_last, {}},
+       [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
+          if (key.c_w_id == c_w_id && key.c_d_id == c_d_id && key.c_last == c_last) {
+             ids.push_back(rec.c_id);
+             return true;
+          }
+          return false;
+       },
+       [&]() { ids.clear(); });
+   unsigned c_count = ids.size();
+   if (c_count == 0)
       return;  // TODO: rollback
-   Integer c_id = pickCustomer(ids);
-   
-   paymentById(w_id, d_id, c_w_id, c_d_id, c_id, h_date, h_amount, datetime);
+   unsigned index = c_count / 2;
+   if ((c_count % 2) == 0)
+      index -= 1;
+   Integer c_id = ids[index];
+
+   Varchar<500> c_data;
+   Varchar<2> c_credit;
+   Numeric c_balance;
+   Numeric c_ytd_payment;
+   Numeric c_payment_cnt;
+   customer.lookup1({c_w_id, c_d_id, c_id}, [&](const customer_t& rec) {
+      c_data = rec.c_data;
+      c_credit = rec.c_credit;
+      c_balance = rec.c_balance;
+      c_ytd_payment = rec.c_ytd_payment;
+      c_payment_cnt = rec.c_payment_cnt;
+   });
+   Numeric c_new_balance = c_balance - h_amount;
+   Numeric c_new_ytd_payment = c_ytd_payment + h_amount;
+   Numeric c_new_payment_cnt = c_payment_cnt + 1;
+
+   if (c_credit == "BC") {
+      Varchar<500> c_new_data;
+      auto numChars = snprintf(c_new_data.data, 500, "| %4d %2d %4d %2d %4d $%7.2f %lu %s%s %s", c_id, c_d_id, c_w_id, d_id, w_id, h_amount, h_date,
+                               w_name.toString().c_str(), d_name.toString().c_str(), c_data.toString().c_str());
+      c_new_data.length = numChars;
+      if (c_new_data.length > 500)
+         c_new_data.length = 500;
+      customer.update1(
+          {c_w_id, c_d_id, c_id},
+          [&](customer_t& rec) {
+             rec.c_data = c_new_data;
+             rec.c_balance = c_new_balance;
+             rec.c_ytd_payment = c_new_ytd_payment;
+             rec.c_payment_cnt = c_new_payment_cnt;
+          },
+          WALUpdate4(customer_t, c_data, c_balance, c_ytd_payment, c_payment_cnt));
+   } else {
+      customer.update1(
+          {c_w_id, c_d_id, c_id},
+          [&](customer_t& rec) {
+             rec.c_balance = c_new_balance;
+             rec.c_ytd_payment = c_new_ytd_payment;
+             rec.c_payment_cnt = c_new_payment_cnt;
+          },
+          WALUpdate3(customer_t, c_balance, c_ytd_payment, c_payment_cnt));
+   }
+
+   Varchar<24> h_new_data = Varchar<24>(w_name) || Varchar<24>("    ") || d_name;
+   Integer t_id = Integer(WorkerCounters::myCounters().t_id.load());
+   Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
+   history.insert({t_id, h_id}, {c_id, c_d_id, c_w_id, d_id, w_id, datetime, h_amount, h_new_data});
 }
 
 void paymentRnd(Integer w_id)
 {
-   Integer d_id = uRand(1, 10);
+   Integer d_id = urand(1, 10);
    Integer c_w_id = w_id;
    Integer c_d_id = d_id;
-   if (uRand(1, 100) > 85) {
-      c_w_id = uRandExcept(1, warehouseCount, w_id);
-      c_d_id = uRand(1, 10);
+   if (urand(1, 100) > 85) {
+      c_w_id = urandexcept(1, warehouseCount, w_id);
+      c_d_id = urand(1, 10);
    }
    Numeric h_amount = randomNumeric(1.00, 5000.00);
    Timestamp h_date = currentTimestamp();
 
-   if (uRand(1, 100) <= 60) {
+   if (urand(1, 100) <= 60) {
       paymentByName(w_id, d_id, c_w_id, c_d_id, genName(getNonUniformRandomLastNameForRun()), h_date, h_amount, currentTimestamp());
    } else {
       paymentById(w_id, d_id, c_w_id, c_d_id, getCustomerID(), h_date, h_amount, currentTimestamp());
    }
 }
 
-/**
- * @brief Run random transaction on warehouse w_id.
- * Types are
- * - 0: Payment
- * - 1: OrderStatus
- * - 2: Delivery
- * - 3: StockLevel
- * - 4: New Order
- *
- * @param w_id ID of the warehouse
- * @return int Type of transaction run
- */
+// was: [w_begin, w_end]
 int tx(Integer w_id)
 {
    // micro-optimized version of weighted distribution
    int rnd = leanstore::utils::RandomGenerator::getRand(0, 10000);
-   if (rnd < 4300) {  // 0-4299
+   if (rnd < 4300) {
       paymentRnd(w_id);
       return 0;
    }
    rnd -= 4300;
-   if (rnd < 400) {  // 4300 - 4699
+   if (rnd < 400) {
       orderStatusRnd(w_id);
       return 1;
    }
    rnd -= 400;
-   if (rnd < 400) {  // 4700 - 5099
+   if (rnd < 400) {
       deliveryRnd(w_id);
       return 2;
    }
    rnd -= 400;
-   if (rnd < 400) {  // 5100 - 5499
+   if (rnd < 400) {
       stockLevelRnd(w_id);
       return 3;
    }
-   // 5500 - 9999
+   rnd -= 400;
    newOrderRnd(w_id);
    return 4;
 }

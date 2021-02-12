@@ -55,11 +55,6 @@ void ConfigsTable::open()
    columns.emplace("c_vw", [&](Column& col) { col << FLAGS_vw; });
    columns.emplace("c_vw_todo", [&](Column& col) { col << FLAGS_vw_todo; });
    // -------------------------------------------------------------------------------------
-   //TODO: Add more LSM options if necessary
-   columns.emplace("c_lsm", [&](Column& col) { col << FLAGS_lsm; });
-   columns.emplace("c_lsm_bloomFilter", [&](Column& col) { col << FLAGS_lsm_bloomFilter; });
-   columns.emplace("c_lsm_pageSizeFactor", [&](Column& col) { col << FLAGS_lsm_pageSizeFactor; });
-   // -------------------------------------------------------------------------------------
    for (auto& c : columns) {
       c.second.generator(c.second);
    }

@@ -184,6 +184,7 @@ struct Worker {
    void refreshSnapshot();
    // -------------------------------------------------------------------------------------
    void getWALEntry(u8 worker_id, LID lsn, u32 in_memory_offset, std::function<void(WALEntry*)> callback);
+   void getWALEntry(LID lsn, u32 in_memory_offset, std::function<void(WALEntry*)> callback);
    void getWALDTEntryPayload(u8 worker_id, LID lsn, u32 in_memory_offset, std::function<void(u8*)> callback);
 };
 // -------------------------------------------------------------------------------------

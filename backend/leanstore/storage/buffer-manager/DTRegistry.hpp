@@ -7,6 +7,7 @@
 #include <functional>
 #include <tuple>
 #include <unordered_map>
+#include <mutex>
 // -------------------------------------------------------------------------------------
 namespace leanstore
 {
@@ -33,12 +34,16 @@ struct DTRegistry {
       std::function<bool(void*, BufferFrame&, OptimisticGuard&, ParentSwipHandler&)> check_space_utilization;
       std::function<void(void* btree_object, BufferFrame& bf, u8* dest)> checkpoint;
       // -------------------------------------------------------------------------------------
-      u64 instances_counter = 0;
+      // MVCC / SI
+      std::function<void(void* btree_object, const u8* entry, u64 tts)> undo;
+      std::function<void(void* btree_object, const u8* entry, u64 tts)> todo;
    };
    // -------------------------------------------------------------------------------------
+   // TODO: Not syncrhonized
+   std::mutex mutex;
+   u64 instances_counter = 0;
    static DTRegistry global_dt_registry;
    // -------------------------------------------------------------------------------------
-   // TODO: Not syncrhonized
    std::unordered_map<DTType, DTMeta> dt_types_ht;
    std::unordered_map<u64, std::tuple<DTType, void*, string>> dt_instances_ht;
    // -------------------------------------------------------------------------------------

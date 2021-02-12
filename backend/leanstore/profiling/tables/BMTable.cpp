@@ -15,7 +15,6 @@ namespace profiling
 // -------------------------------------------------------------------------------------
 BMTable::BMTable(BufferManager& bm) : ProfilingTable(), bm(bm) {}
 // -------------------------------------------------------------------------------------
-
 std::string BMTable::getName()
 {
    return "bm";
