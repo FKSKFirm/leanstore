@@ -102,7 +102,7 @@ void buildNode(vector<KeyEntry>& entries, vector<uint8_t>& keyStorage, BTreeLL& 
    node->count = entries.size();
    node->insertFence(node->lower_fence, entries.back().keyOffset+keyStorage.data(), node->prefix_length); // XXX: could put prefix before last key and set upperfence
    node->makeHint();
-   //btree.insert(entries.back().keyOffset + keyStorage.data(), entries.back().len,
+   //keyValueDataStore.insert(entries.back().keyOffset + keyStorage.data(), entries.back().len,
    btree.insertLeafSorted(entries.back().keyOffset+keyStorage.data(), entries.back().len, node);
 }
 

@@ -52,7 +52,7 @@ class BTreeExclusiveIteratorInterface : public BTreePessimisticIteratorInterface
    virtual OP_RESULT split() = 0;
 };
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore
 // -------------------------------------------------------------------------------------

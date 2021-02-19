@@ -39,11 +39,9 @@ class BTreeLL : public KeyValueInterface, public BTreeGeneric
    virtual u64 getHeight() override;
    // -------------------------------------------------------------------------------------
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);
-   static void undo(void* btree_object, const u64 tts);
-   static void todo(void* btree_object, const u64 tts);
    static DataTypeRegistry::DTMeta getMeta();
 };
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore

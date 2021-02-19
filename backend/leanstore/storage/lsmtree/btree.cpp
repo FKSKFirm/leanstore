@@ -194,13 +194,13 @@ struct ParentSwipHandler BTree::findParent(void* btree_object, BufferFrame& to_f
 {
    // Pre: bufferFrame is write locked TODO: but trySplit does not ex lock !
    auto& c_node = *reinterpret_cast<BTreeNode*>(to_find.page.dt);
-   auto& btree = *reinterpret_cast<BTree*>(btree_object);
+   auto& keyValueDataStore = *reinterpret_cast<BTree*>(btree_object);
    // -------------------------------------------------------------------------------------
-   HybridPageGuard<BTreeNode> p_guard(btree.meta_node_bf);
+   HybridPageGuard<BTreeNode> p_guard(keyValueDataStore.meta_node_bf);
    uint16_t level = 0;
    // -------------------------------------------------------------------------------------
    Swip<BTreeNode>* c_swip = &p_guard->upper;
-   if (btree.dt_id != to_find.page.dt_id || (!p_guard->upper.isHOT())) {
+   if (keyValueDataStore.dt_id != to_find.page.dt_id || (!p_guard->upper.isHOT())) {
       jumpmu::jump();
    }
    // -------------------------------------------------------------------------------------
@@ -211,7 +211,7 @@ struct ParentSwipHandler BTree::findParent(void* btree_object, BufferFrame& to_f
    // check if bufferFrame is the root node
    if (c_swip->bfPtrAsHot() == &to_find) {
       p_guard.recheck();
-      return {.swip = c_swip->cast<BufferFrame>(), .parent_guard = std::move(p_guard.guard), .parent_bf = btree.meta_node_bf};
+      return {.swip = c_swip->cast<BufferFrame>(), .parent_guard = std::move(p_guard.guard), .parent_bf = keyValueDataStore.meta_node_bf};
    }
    // -------------------------------------------------------------------------------------
    HybridPageGuard c_guard(p_guard, p_guard->upper);  // the parent of the bufferFrame we are looking for (to_find)
@@ -250,14 +250,11 @@ struct ParentSwipHandler BTree::findParent(void* btree_object, BufferFrame& to_f
 
 
 // -------------------------------------------------------------------------------------
-struct DTRegistry::DTMeta BTree::getMeta()
+struct DataTypeRegistry::DTMeta BTree::getMeta()
 {
-   DTRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
+   DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
        .find_parent = findParent,
-       .check_space_utilization = checkSpaceUtilization,
-       .checkpoint = checkpoint,
-       .undo = undo,
-       .todo = todo};
+       .check_space_utilization = checkSpaceUtilization};
    return btree_meta;
 }
 // -------------------------------------------------------------------------------------
@@ -268,25 +265,6 @@ bool BTree::checkSpaceUtilization(void* btree_object, BufferFrame& bf, Optimisti
 {
    //TODO: If Xmerge is active
    return false;
-}
-// -------------------------------------------------------------------------------------
-void BTree::checkpoint(void*, BufferFrame& bf, u8* dest)
-{
-   std::memcpy(dest, bf.page.dt, EFFECTIVE_PAGE_SIZE);
-   auto node = *reinterpret_cast<BTreeNode*>(bf.page.dt);
-   auto dest_node = *reinterpret_cast<BTreeNode*>(bf.page.dt);
-   if (!node.isLeaf) {
-      for (u64 t_i = 0; t_i < dest_node.count; t_i++) {
-         if (!dest_node.getChild(t_i).isEVICTED()) {
-            auto& bf = dest_node.getChild(t_i).bfRefAsHot();
-            dest_node.getChild(t_i).evict(bf.header.pid);
-         }
-      }
-      if (!dest_node.upper.isEVICTED()) {
-         auto& bf = dest_node.upper.bfRefAsHot();
-         dest_node.upper.evict(bf.header.pid);
-      }
-   }
 }
 // -------------------------------------------------------------------------------------
 // Jump if any page on the path is already evicted or of the getBufferFrame could not be found

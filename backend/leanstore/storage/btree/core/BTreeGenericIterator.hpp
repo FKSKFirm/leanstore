@@ -147,7 +147,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
    virtual Slice keyWithoutPrefix() override { return Slice(leaf->getKey(cur), leaf->getKeyLen(cur)); }
    virtual u16 valueLength() { return leaf->getPayloadLength(cur); }
    virtual Slice value() override { return Slice(leaf->getPayload(cur), leaf->getPayloadLength(cur)); }
-};  // namespace btree
+};  // namespace keyValueDataStore
 // -------------------------------------------------------------------------------------
 using BTreeSharedIterator = BTreePessimisticIterator<LATCH_FALLBACK_MODE::SHARED>;
 class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MODE::EXCLUSIVE>
@@ -223,25 +223,6 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
    }
    }
    // -------------------------------------------------------------------------------------
-   virtual OP_RESULT replaceKV(Slice key, Slice value)
-   {
-   restart : {
-      auto ret = seekExact(key);
-      if (ret != OP_RESULT::OK) {
-         return ret;
-      }
-      removeCurrent();
-      if (canInsertInCurrentNode(key, value.length()) != OP_RESULT::OK) {
-         splitForKey(key);
-         goto restart;
-      }
-      insertInCurrentNode(key, value);
-      return OP_RESULT::OK;
-   }
-   }
-   // -------------------------------------------------------------------------------------
-   virtual void shorten(const u16 new_size) { leaf->shortenPayload(cur, new_size); }
-   // -------------------------------------------------------------------------------------
    virtual MutableSlice mutableValue() { return MutableSlice(leaf->getPayload(cur), leaf->getPayloadLength(cur)); }
    // -------------------------------------------------------------------------------------
    virtual void contentionSplit()
@@ -307,6 +288,6 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
    }
 };
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore

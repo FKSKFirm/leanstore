@@ -293,6 +293,6 @@ struct BTreeNode : public BTreeNodeHeader {
 // -------------------------------------------------------------------------------------
 static_assert(sizeof(BTreeNode) == EFFECTIVE_PAGE_SIZE, "BTreeNode must be equal to one page");
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore

@@ -54,8 +54,8 @@ LeanStore::LeanStore()
    BMC::global_bf = buffer_manager.get();
    // -------------------------------------------------------------------------------------
    DataTypeRegistry::global_dt_registry.registerDatastructureType(0, storage::btree::BTreeLL::getMeta());
-   //DataTypeRegistry::global_dt_registry.registerDatastructureType(2, storage::btree::BTreeVI::getMeta());
-   //DataTypeRegistry::global_dt_registry.registerDatastructureType(3, storage::lsmTree::BTree::getMeta());
+   //DataTypeRegistry::global_dt_registry.registerDatastructureType(2, storage::keyValueDataStore::BTreeVI::getMeta());
+//   DataTypeRegistry::global_dt_registry.registerDatastructureType(3, storage::lsmTree::BTree::getMeta());
    //DataTypeRegistry::global_dt_registry.registerDatastructureType(4, storage::lsmtree::LSMTree::getMeta());
    // -------------------------------------------------------------------------------------
    u64 end_of_block_device;

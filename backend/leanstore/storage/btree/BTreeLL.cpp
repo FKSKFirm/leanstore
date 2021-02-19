@@ -154,7 +154,6 @@ OP_RESULT BTreeLL::remove(u8* o_key, u16 o_key_length)
       if (ret != OP_RESULT::OK) {
          jumpmu_return ret;
       }
-      Slice value = iterator.value();
       iterator.leaf.incrementGSN();
       ret = iterator.removeCurrent();
       ensure(ret == OP_RESULT::OK);
@@ -183,8 +182,7 @@ struct DataTypeRegistry::DTMeta BTreeLL::getMeta()
 {
    DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
                                     .find_parent = findParent,
-                                    .check_space_utilization = checkSpaceUtilization,
-                                    .checkpoint = checkpoint};
+                                    .check_space_utilization = checkSpaceUtilization};
    return btree_meta;
 }
 // -------------------------------------------------------------------------------------
@@ -193,6 +191,6 @@ struct ParentSwipHandler BTreeLL::findParent(void* btree_object, BufferFrame& to
    return BTreeGeneric::findParent(*static_cast<BTreeGeneric*>(reinterpret_cast<BTreeLL*>(btree_object)), to_find);
 }
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore

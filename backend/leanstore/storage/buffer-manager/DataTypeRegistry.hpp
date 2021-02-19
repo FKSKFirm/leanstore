@@ -32,11 +32,6 @@ struct DataTypeRegistry {
       std::function<void(void*, BufferFrame&, std::function<bool(Swip<BufferFrame>&)>)> iterate_children;
       std::function<ParentSwipHandler(void*, BufferFrame&)> find_parent;
       std::function<bool(void*, BufferFrame&, OptimisticGuard&, ParentSwipHandler&)> check_space_utilization;
-      std::function<void(void* btree_object, BufferFrame& bf, u8* dest)> checkpoint;
-      // -------------------------------------------------------------------------------------
-      // MVCC / SI
-      std::function<void(void* btree_object, const u8* entry, u64 tts)> undo;
-      std::function<void(void* btree_object, const u8* entry, u64 tts)> todo;
    };
    // -------------------------------------------------------------------------------------
    // TODO: Not syncrhonized
@@ -53,12 +48,6 @@ struct DataTypeRegistry {
    void iterateChildrenSwips(DTID dtid, BufferFrame&, std::function<bool(Swip<BufferFrame>&)>);
    ParentSwipHandler findParent(DTID dtid, BufferFrame&);
    bool checkSpaceUtilization(DTID dtid, BufferFrame&, OptimisticGuard&, ParentSwipHandler&);
-   // Pre: getBufferFrame is shared/exclusive latched
-   void checkpoint(DTID dt_id, BufferFrame& bf, u8*);
-   // -------------------------------------------------------------------------------------
-   // Recovery / SI
-   void undo(DTID dt_id, u64 tts);
-   void todo(DTID dt_id, u64 tts);
 };
 
 // -------------------------------------------------------------------------------------

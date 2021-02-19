@@ -23,7 +23,7 @@ check `build/frontend/tpcc --help` for other options
 - backend/leanstore: Implementation of Leanstore
   - Config.cpp: Configuration of flags
   - storage:
-    - btree: Different B-Tree Implementations
+    - keyValueDataStore: Different B-Tree Implementations
       - BTreeLL: LowLevel implementation, without concurrency control
       - BTreeSI: Snapshot Isolation
 	  - BTreeSlotted: ??

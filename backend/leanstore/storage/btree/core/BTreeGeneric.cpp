@@ -393,25 +393,6 @@ bool BTreeGeneric::checkSpaceUtilization(void* btree_object, BufferFrame& bf, Op
    return false;
 }
 // -------------------------------------------------------------------------------------
-void BTreeGeneric::checkpoint(void*, BufferFrame& bf, u8* dest)
-{
-   std::memcpy(dest, bf.page.dt, EFFECTIVE_PAGE_SIZE);
-   auto node = *reinterpret_cast<BTreeNode*>(bf.page.dt);
-   auto dest_node = *reinterpret_cast<BTreeNode*>(bf.page.dt);
-   if (!node.is_leaf) {
-      for (u64 t_i = 0; t_i < dest_node.count; t_i++) {
-         if (!dest_node.getChild(t_i).isEVICTED()) {
-            auto& bf = dest_node.getChild(t_i).bfRefAsHot();
-            dest_node.getChild(t_i).evict(bf.header.pid);
-         }
-      }
-      if (!dest_node.upper.isEVICTED()) {
-         auto& bf = dest_node.upper.bfRefAsHot();
-         dest_node.upper.evict(bf.header.pid);
-      }
-   }
-}
-// -------------------------------------------------------------------------------------
 // TODO: Refactor
 // Jump if any page on the path is already evicted or of the getBufferFrame could not be found
 // to_find is not latched
@@ -563,6 +544,6 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
         << " rootCnt:" << r_guard->count << " bytesFree:" << bytesFree() << endl;
 }
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore

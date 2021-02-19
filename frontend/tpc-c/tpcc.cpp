@@ -107,7 +107,7 @@ int main(int argc, char** argv)
    // -------------------------------------------------------------------------------------
    double gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
    cout << "data loaded - consumed space in GiB = " << gib << endl;
-   crm.scheduleJobSync(0, [&]() { cout << "Warehouse pages = " << warehouse.btree->countPages() << endl; });
+   crm.scheduleJobSync(0, [&]() { cout << "Warehouse pages = " << warehouse.keyValueDataStore->countPages() << endl; });
    // -------------------------------------------------------------------------------------
    atomic<u64> keep_running = true;
    atomic<u64> running_threads_counter = 0;

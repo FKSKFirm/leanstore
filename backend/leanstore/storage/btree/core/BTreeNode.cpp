@@ -399,6 +399,6 @@ bool BTreeNode::remove(const u8* key, const u16 keyLength)
    return removeSlot(slotId);
 }
 // -------------------------------------------------------------------------------------
-}  // namespace btree
+}  // namespace keyValueDataStore
 }  // namespace storage
 }  // namespace leanstore

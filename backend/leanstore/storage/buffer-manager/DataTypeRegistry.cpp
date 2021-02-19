@@ -28,12 +28,6 @@ bool DataTypeRegistry::checkSpaceUtilization(DTID dtid, BufferFrame& bf, Optimis
    return dt_types_ht[std::get<0>(dt_meta)].check_space_utilization(std::get<1>(dt_meta), bf, guard, parent_handler);
 }
 // -------------------------------------------------------------------------------------
-void DataTypeRegistry::checkpoint(DTID dtid, BufferFrame& bf, u8* dest)
-{
-   auto dt_meta = dt_instances_ht[dtid];
-   return dt_types_ht[std::get<0>(dt_meta)].checkpoint(std::get<1>(dt_meta), bf, dest);
-}
-// -------------------------------------------------------------------------------------
 // Datastructures management
 // -------------------------------------------------------------------------------------
 void DataTypeRegistry::registerDatastructureType(DTType type, DataTypeRegistry::DTMeta dt_meta)

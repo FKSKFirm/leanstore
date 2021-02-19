@@ -55,8 +55,7 @@ class BTree : public KeyValueInterface {
    {
       DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
           .find_parent = findParent,
-          .check_space_utilization = checkSpaceUtilization,
-          .checkpoint = checkpoint};
+          .check_space_utilization = checkSpaceUtilization};
       return btree_meta;
    }*/
    static DataTypeRegistry::DTMeta getMeta();
@@ -64,9 +63,6 @@ class BTree : public KeyValueInterface {
    // static ParentSwipHandler findParent(BTree& btree_object, BufferFrame& to_find);
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);
    static void iterateChildrenSwips(void* btree_object, BufferFrame& bf, std::function<bool(Swip<BufferFrame>&)> callback);
-   static void checkpoint(void*, BufferFrame& bf, u8* dest);
-   static void undo(void* btree_object, const u64 tts);
-   static void todo(void* btree_object, const u64 tts);
 
 
    //from KeyValueInterface.hpp, has to be implemented? Maybe instead inherit from BTreeGeneric?
