@@ -58,11 +58,6 @@ DECLARE_string(tag);
 // -------------------------------------------------------------------------------------
 DECLARE_bool(out_of_place);
 // -------------------------------------------------------------------------------------
-DECLARE_bool(wal);
-DECLARE_uint64(wal_offset_gib);
-DECLARE_bool(wal_io_hack);
-DECLARE_bool(wal_fsync);
-// -------------------------------------------------------------------------------------
 DECLARE_bool(si);
 DECLARE_uint64(si_refresh_rate);
 DECLARE_bool(vw);

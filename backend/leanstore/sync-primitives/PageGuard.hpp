@@ -47,7 +47,6 @@ class HybridPageGuard
    HybridPageGuard(BufferFrame* bf) : bufferFrame(bf), guard(bf->header.latch)
    {
       guard.toOptimisticSpin();
-      syncGSN();
       jumpmu_registerDestructor();
    }
    // -------------------------------------------------------------------------------------
@@ -63,7 +62,6 @@ class HybridPageGuard
       } else if (if_contended == LATCH_FALLBACK_MODE::SHARED) {
          guard.toOptimisticOrShared();
       }
-      syncGSN();
       jumpmu_registerDestructor();
       // -------------------------------------------------------------------------------------
       DEBUG_BLOCK()
@@ -103,31 +101,6 @@ class HybridPageGuard
    }
    // -------------------------------------------------------------------------------------
    inline void incrementGSN() { bufferFrame->page.GSN++; }
-   // WAL
-   inline void syncGSN()
-   {
-      if (FLAGS_wal) {
-         auto current_gsn = cr::Worker::my().getCurrentGSN();
-         if (current_gsn < bufferFrame->page.GSN) {
-            cr::Worker::my().setCurrentGSN(bufferFrame->page.GSN);
-         }
-      }
-   }
-   template <typename WT>
-   cr::Worker::WALEntryHandler<WT> reserveWALEntry(u64 extra_size)
-   {
-      assert(FLAGS_wal);
-      assert(guard.state == GUARD_STATE::EXCLUSIVE);
-      const LID gsn = std::max<LID>(bufferFrame->page.GSN, cr::Worker::my().getCurrentGSN()) + 1;
-      bufferFrame->page.GSN = gsn;
-      cr::Worker::my().setCurrentGSN(gsn);
-      // -------------------------------------------------------------------------------------
-      const auto pid = bufferFrame->header.pid;
-      const auto dt_id = bufferFrame->page.dt_id;
-      auto handler = cr::Worker::my().reserveDTEntry<WT>(sizeof(WT) + extra_size, pid, gsn, dt_id);
-      return handler;
-   }
-   inline void submitWALEntry(u64 total_size) { cr::Worker::my().submitDTEntry(total_size); }
    // -------------------------------------------------------------------------------------
    inline bool hasFacedContention() { return guard.faced_contention; }
    inline void unlock() { guard.unlock(); }
@@ -174,18 +147,8 @@ class ExclusivePageGuard
    ExclusivePageGuard(HybridPageGuard<T>&& o_guard) : ref_guard(o_guard)
    {
       ref_guard.guard.toExclusive();
-      if (!FLAGS_wal) {
-         ref_guard.incrementGSN();
-      }
+      ref_guard.incrementGSN();
    }
-   // -------------------------------------------------------------------------------------
-   template <typename WT>
-   cr::Worker::WALEntryHandler<WT> reserveWALEntry(u64 extra_size)
-   {
-      return ref_guard.template reserveWALEntry<WT>(extra_size);
-   }
-   // -------------------------------------------------------------------------------------
-   inline void submitWALEntry(u64 total_size) { ref_guard.submitWALEntry(total_size); }
    // -------------------------------------------------------------------------------------
    template <typename... Args>
    void init(Args&&... args)

@@ -30,9 +30,6 @@ namespace leanstore
 LeanStore::LeanStore()
 {
    // -------------------------------------------------------------------------------------
-   // Check if configurations make sense
-   ensure(!FLAGS_vw || FLAGS_wal);
-   // -------------------------------------------------------------------------------------
    // Set the default logger to file logger
    // Init SSD pool
    int flags = O_RDWR | O_DIRECT;
@@ -58,16 +55,16 @@ LeanStore::LeanStore()
    // -------------------------------------------------------------------------------------
    DataTypeRegistry::global_dt_registry.registerDatastructureType(0, storage::btree::BTreeLL::getMeta());
    //DataTypeRegistry::global_dt_registry.registerDatastructureType(2, storage::btree::BTreeVI::getMeta());
-   DataTypeRegistry::global_dt_registry.registerDatastructureType(3, storage::lsmtree::BTree::getMeta());
+   //DataTypeRegistry::global_dt_registry.registerDatastructureType(3, storage::lsmTree::BTree::getMeta());
    //DataTypeRegistry::global_dt_registry.registerDatastructureType(4, storage::lsmtree::LSMTree::getMeta());
    // -------------------------------------------------------------------------------------
    u64 end_of_block_device;
-   if (FLAGS_wal_offset_gib == 0) {
+   //if (FLAGS_wal_offset_gib == 0) {
       ioctl(ssd_fd, BLKGETSIZE64, &end_of_block_device);
-   } else {
-      end_of_block_device = FLAGS_wal_offset_gib * 1024 * 1024 * 1024;
-   }
-   cr_manager = make_unique<cr::WorkerThreadManager>(ssd_fd, end_of_block_device);
+   //} else {
+   //   end_of_block_device = FLAGS_wal_offset_gib * 1024 * 1024 * 1024;
+   //}
+   cr_manager = make_unique<cr::WorkerThreadManager>();
    cr::WorkerThreadManager::global = cr_manager.get();
 }
 // -------------------------------------------------------------------------------------
@@ -77,7 +74,6 @@ LeanStore::~LeanStore()
    while (bg_threads_counter) {
       MYPAUSE();
    }
-   //  close(ssd_fd);
 }
 // -------------------------------------------------------------------------------------
 void LeanStore::startProfilingThread()
@@ -151,8 +147,8 @@ void LeanStore::startProfilingThread()
                            "GCT Rounds"});
             table.add_row({std::to_string(seconds), cr_table.get("0", "tx"), cr_table.get("0", "tx_abort"), cr_table.get("0", "gct_committed_tx"),
                            bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(instr_per_tx), std::to_string(cycles_per_tx),
-                           std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), cr_table.get("0", "wal_total"),
-                           cr_table.get("0", "wal_read_gib"), cr_table.get("0", "wal_write_gib"), cr_table.get("0", "gct_rounds")});
+                           std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx),
+                           cr_table.get("0", "gct_rounds")});
             // -------------------------------------------------------------------------------------
             table.format().width(10);
             table.column(0).format().width(5);
@@ -204,19 +200,19 @@ storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
 }
 
 // TODO -------------------------------------------------------------------------------------
-storage::lsmtree::BTree& LeanStore::registerOwnBTree(string name)
-{
-   assert(ownBTrees.find(name) == ownBTrees.end());
-   auto& ownBTree = ownBTrees[name];
-   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&ownBTree), name);
-   auto& bf = buffer_manager->allocatePage();
-   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
-   bf.header.keep_in_memory = true;
-   bf.page.dt_id = dtid;
-   guard.unlock();
-   ownBTree.create(dtid, &bf);
-   return ownBTree;
-}
+//storage::lsmTree::BTree& LeanStore::registerOwnBTree(string name)
+//{
+//   assert(ownBTrees.find(name) == ownBTrees.end());
+//   auto& ownBTree = ownBTrees[name];
+//   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&ownBTree), name);
+//   auto& bf = buffer_manager->allocatePage();
+//   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+//   bf.header.keep_in_memory = true;
+//   bf.page.dt_id = dtid;
+//   guard.unlock();
+//   ownBTree.create(dtid, &bf);
+//   return ownBTree;
+//}
 
 // TODO -------------------------------------------------------------------------------------
 //storage::lsmtree::LSMTree& LeanStore::registerLSMTree(string name)

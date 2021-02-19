@@ -65,14 +65,14 @@ class BTree : public KeyValueInterface {
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);
    static void iterateChildrenSwips(void* btree_object, BufferFrame& bf, std::function<bool(Swip<BufferFrame>&)> callback);
    static void checkpoint(void*, BufferFrame& bf, u8* dest);
-   static void undo(void* btree_object, const u8* wal_entry_ptr, const u64 tts);
-   static void todo(void* btree_object, const u8* wal_entry_ptr, const u64 tts);
+   static void undo(void* btree_object, const u64 tts);
+   static void todo(void* btree_object, const u64 tts);
 
 
    //from KeyValueInterface.hpp, has to be implemented? Maybe instead inherit from BTreeGeneric?
    virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
    virtual OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
-   virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>, WALUpdateGenerator = {{}, {}, 0}) override;
+   virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>) override;
    virtual OP_RESULT remove(u8* key, u16 key_length) override;
    virtual OP_RESULT scanAsc(u8* start_key,
                              u16 key_length,

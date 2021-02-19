@@ -21,32 +21,9 @@ namespace btree
 class BTreeLL : public KeyValueInterface, public BTreeGeneric
 {
   public:
-   struct WALBeforeAfterImage : WALEntry {
-      u16 image_size;
-      u8 payload[];
-   };
-   struct WALAfterImage : WALEntry {
-      u16 image_size;
-      u8 payload[];
-   };
-   struct WALInsert : WALEntry {
-      u16 key_length;
-      u16 value_length;
-      u8 payload[];
-   };
-   struct WALUpdate : WALEntry {
-      u16 key_length;
-      u8 payload[];
-   };
-   struct WALRemove : WALEntry {
-      u16 key_length;
-      u16 value_length;
-      u8 payload[];
-   };
-   // -------------------------------------------------------------------------------------
    virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
    virtual OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
-   virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>, WALUpdateGenerator = {{}, {}, 0}) override;
+   virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>) override;
    virtual OP_RESULT remove(u8* key, u16 key_length) override;
    virtual OP_RESULT scanAsc(u8* start_key,
                              u16 key_length,
@@ -62,8 +39,8 @@ class BTreeLL : public KeyValueInterface, public BTreeGeneric
    virtual u64 getHeight() override;
    // -------------------------------------------------------------------------------------
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);
-   static void undo(void* btree_object, const u8* wal_entry_ptr, const u64 tts);
-   static void todo(void* btree_object, const u8* wal_entry_ptr, const u64 tts);
+   static void undo(void* btree_object, const u64 tts);
+   static void todo(void* btree_object, const u64 tts);
    static DataTypeRegistry::DTMeta getMeta();
 };
 // -------------------------------------------------------------------------------------

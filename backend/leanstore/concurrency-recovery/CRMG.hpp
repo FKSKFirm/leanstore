@@ -42,13 +42,8 @@ class WorkerThreadManager
    WorkerThread worker_threads_meta[MAX_WORKER_THREADS];
    u32 workers_count;
    // -------------------------------------------------------------------------------------
-   const s32 ssd_fd;
-   const u64 end_of_block_device;
-   // -------------------------------------------------------------------------------------
-   WorkerThreadManager(s32 ssd_fd, u64 end_of_block_device);
+   WorkerThreadManager();
    ~WorkerThreadManager();
-   // -------------------------------------------------------------------------------------
-   void groupCommiter();
    // -------------------------------------------------------------------------------------
    void scheduleJobAsync(u64 t_i, std::function<void()> job);
    void scheduleJobSync(u64 t_i, std::function<void()> job);

@@ -50,7 +50,6 @@ void ConfigsTable::open()
    columns.emplace("c_zipf_factor", [&](Column& col) { col << FLAGS_zipf_factor; });
    columns.emplace("c_backoff", [&](Column& col) { col << FLAGS_backoff; });
    // -------------------------------------------------------------------------------------
-   columns.emplace("c_wal", [&](Column& col) { col << FLAGS_wal; });
    columns.emplace("c_si", [&](Column& col) { col << FLAGS_si; });
    columns.emplace("c_vw", [&](Column& col) { col << FLAGS_vw; });
    columns.emplace("c_vw_todo", [&](Column& col) { col << FLAGS_vw_todo; });

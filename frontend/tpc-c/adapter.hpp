@@ -2,7 +2,6 @@
 #include "types.hpp"
 // -------------------------------------------------------------------------------------
 #include "leanstore/LeanStore.hpp"
-#include "leanstore/storage/btree/core/WALMacros.hpp"
 // -------------------------------------------------------------------------------------
 #include <cassert>
 #include <cstdint>
@@ -32,7 +31,7 @@ struct LeanStoreAdapter {
       } else if (FLAGS_vi) {
          //removed
       } else if (FLAGS_lsm) {
-         btree = &db.registerOwnBTree(name);
+//         btree = &db.registerOwnBTree(name);
          //btree = &db.registerLSMTree(name);
       } else {
          btree = &db.registerBTreeLL(name);
@@ -69,7 +68,6 @@ struct LeanStoreAdapter {
       const auto res = btree->insert(folded_key, folded_key_len, (u8*)(&record), sizeof(Record));
       ensure(res == OP_RESULT::OK || res == OP_RESULT::ABORT_TX);
       if (res == OP_RESULT::ABORT_TX) {
-         cr::Worker::my().abortTX();
       }
    }
 
@@ -88,7 +86,7 @@ struct LeanStoreAdapter {
    }
 
    template <class Fn>
-   void update1(const typename Record::Key& key, const Fn& fn, storage::WALUpdateGenerator wal_update_generator)
+   void update1(const typename Record::Key& key, const Fn& fn)
    {
       u8 folded_key[Record::maxFoldLength()];
       u16 folded_key_len = Record::foldRecord(folded_key, key);
@@ -99,11 +97,9 @@ struct LeanStoreAdapter {
              assert(payload_length == sizeof(Record));
              Record& typed_payload = *reinterpret_cast<Record*>(payload);
              fn(typed_payload);
-          },
-          wal_update_generator);
+          });
       ensure(res != OP_RESULT::NOT_FOUND);
       if (res == OP_RESULT::ABORT_TX) {
-         cr::Worker::my().abortTX();
       }
    }
 
@@ -113,7 +109,6 @@ struct LeanStoreAdapter {
       u16 folded_key_len = Record::foldRecord(folded_key, key);
       const auto res = btree->remove(folded_key, folded_key_len);
       if (res == OP_RESULT::ABORT_TX) {
-         cr::Worker::my().abortTX();
       }
       return (res == OP_RESULT::OK);
    }

@@ -110,7 +110,6 @@ OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(co
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_length)
 {
-   cr::Worker::my().walEnsureEnoughSpace(PAGE_SIZE * 1);
    Slice key(o_key, o_key_length);
    Slice value(o_value, o_value_length);
    jumpmuTry()
@@ -118,17 +117,7 @@ OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_
       BTreeExclusiveIterator iterator(*static_cast<BTreeGeneric*>(this));
       auto ret = iterator.insertKV(key, value);
       ensure(ret == OP_RESULT::OK);
-      if (FLAGS_wal) {
-         auto wal_entry = iterator.leaf.reserveWALEntry<WALInsert>(key.length() + value.length());
-         wal_entry->type = WAL_LOG_TYPE::WALInsert;
-         wal_entry->key_length = key.length();
-         wal_entry->value_length = value.length();
-         std::memcpy(wal_entry->payload, key.data(), key.length());
-         std::memcpy(wal_entry->payload + key.length(), value.data(), value.length());
-         wal_entry.submit();
-      } else {
-        iterator.leaf.incrementGSN();
-      }
+      iterator.leaf.incrementGSN();
       jumpmu_return OP_RESULT::OK;
    }
    jumpmuCatch() { ensure(false); }
@@ -136,10 +125,8 @@ OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::updateSameSize(u8* o_key,
                                   u16 o_key_length,
-                                  function<void(u8* payload, u16 payload_size)> callback,
-                                  WALUpdateGenerator wal_update_generator)
+                                  function<void(u8* payload, u16 payload_size)> callback)
 {
-   cr::Worker::my().walEnsureEnoughSpace(PAGE_SIZE * 1);
    Slice key(o_key, o_key_length);
    jumpmuTry()
    {
@@ -149,23 +136,8 @@ OP_RESULT BTreeLL::updateSameSize(u8* o_key,
          jumpmu_return ret;
       }
       auto current_value = iterator.mutableValue();
-      if (FLAGS_wal) {
-         // if it is a secondary index, then we can not use updateSameSize
-         assert(wal_update_generator.entry_size > 0);
-         // -------------------------------------------------------------------------------------
-         auto wal_entry = iterator.leaf.reserveWALEntry<WALUpdate>(key.length() + wal_update_generator.entry_size);
-         wal_entry->type = WAL_LOG_TYPE::WALUpdate;
-         wal_entry->key_length = key.length();
-         std::memcpy(wal_entry->payload, key.data(), key.length());
-         wal_update_generator.before(current_value.data(), wal_entry->payload + key.length());
-         // The actual update by the client
-         callback(current_value.data(), current_value.length());
-         wal_update_generator.after(current_value.data(), wal_entry->payload + key.length());
-         wal_entry.submit();
-      } else {
-         callback(current_value.data(), current_value.length());
-         iterator.leaf.incrementGSN();
-      }
+      callback(current_value.data(), current_value.length());
+      iterator.leaf.incrementGSN();
       iterator.contentionSplit();
       jumpmu_return OP_RESULT::OK;
    }
@@ -174,7 +146,6 @@ OP_RESULT BTreeLL::updateSameSize(u8* o_key,
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::remove(u8* o_key, u16 o_key_length)
 {
-   cr::Worker::my().walEnsureEnoughSpace(PAGE_SIZE * 1);
    Slice key(o_key, o_key_length);
    jumpmuTry()
    {
@@ -184,16 +155,7 @@ OP_RESULT BTreeLL::remove(u8* o_key, u16 o_key_length)
          jumpmu_return ret;
       }
       Slice value = iterator.value();
-      if (FLAGS_wal) {
-         auto wal_entry = iterator.leaf.reserveWALEntry<WALRemove>(o_key_length);
-         wal_entry->type = WAL_LOG_TYPE::WALRemove;
-         wal_entry->key_length = o_key_length;
-         std::memcpy(wal_entry->payload, key.data(), key.length());
-         std::memcpy(wal_entry->payload + o_key_length, value.data(), value.length());
-         wal_entry.submit();
-      } else {
-         iterator.leaf.incrementGSN();
-      }
+      iterator.leaf.incrementGSN();
       ret = iterator.removeCurrent();
       ensure(ret == OP_RESULT::OK);
       iterator.mergeIfNeeded();
@@ -217,21 +179,12 @@ u64 BTreeLL::getHeight()
    return BTreeGeneric::getHeight();
 }
 // -------------------------------------------------------------------------------------
-void BTreeLL::undo(void*, const u8*, const u64)
-{
-   // TODO: undo for storage
-}
-// -------------------------------------------------------------------------------------
-void BTreeLL::todo(void*, const u8*, const u64) {}
-// -------------------------------------------------------------------------------------
 struct DataTypeRegistry::DTMeta BTreeLL::getMeta()
 {
    DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
                                     .find_parent = findParent,
                                     .check_space_utilization = checkSpaceUtilization,
-                                    .checkpoint = checkpoint,
-                                    .undo = undo,
-                                    .todo = todo};
+                                    .checkpoint = checkpoint};
    return btree_meta;
 }
 // -------------------------------------------------------------------------------------

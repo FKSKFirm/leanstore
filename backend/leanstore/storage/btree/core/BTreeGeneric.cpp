@@ -34,7 +34,6 @@ void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf)
 // -------------------------------------------------------------------------------------
 void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
 {
-   cr::Worker::my().walEnsureEnoughSpace(PAGE_SIZE * 1);
    auto parent_handler = findParent(*this, to_split);
    HybridPageGuard<BTreeNode> p_guard = parent_handler.getParentReadPageGuard<BTreeNode>();
    HybridPageGuard<BTreeNode> c_guard = HybridPageGuard(p_guard, parent_handler.swip.cast<BTreeNode>());
@@ -76,39 +75,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          // -------------------------------------------------------------------------------------
          c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
       };
-      if (FLAGS_wal) {
-         auto new_root_init_wal = new_root.reserveWALEntry<WALInitPage>(0);
-         new_root_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-         new_root_init_wal->dt_id = dt_id;
-         new_root_init_wal.submit();
-         auto new_left_init_wal = new_left_node.reserveWALEntry<WALInitPage>(0);
-         new_left_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-         new_left_init_wal->dt_id = dt_id;
-         new_left_init_wal.submit();
-         // -------------------------------------------------------------------------------------
-         WALLogicalSplit logical_split_entry;
-         logical_split_entry.type = WAL_LOG_TYPE::WALLogicalSplit;
-         logical_split_entry.right_pid = c_x_guard.getBufferFrame()->header.pid;
-         logical_split_entry.parent_pid = new_root.getBufferFrame()->header.pid;
-         logical_split_entry.left_pid = new_left_node.getBufferFrame()->header.pid;
-         // -------------------------------------------------------------------------------------
-         auto current_right_wal = c_x_guard.reserveWALEntry<WALLogicalSplit>(0);
-         *current_right_wal = logical_split_entry;
-         assert(current_right_wal->type == logical_split_entry.type);
-         current_right_wal.submit();
-         // -------------------------------------------------------------------------------------
-         exec();
-         // -------------------------------------------------------------------------------------
-         auto root_wal = new_root.reserveWALEntry<WALLogicalSplit>(0);
-         *root_wal = logical_split_entry;
-         root_wal.submit();
-         // -------------------------------------------------------------------------------------
-         auto left_wal = new_left_node.reserveWALEntry<WALLogicalSplit>(0);
-         *left_wal = logical_split_entry;
-         left_wal.submit();
-      } else {
-         exec();
-      }
+      exec();
       // -------------------------------------------------------------------------------------
       height++;
       return;
@@ -132,38 +99,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
             c_x_guard->split(p_x_guard, new_left_node, sep_info.slot, sep_key, sep_info.length);
          };
          // -------------------------------------------------------------------------------------
-         if (FLAGS_wal) {
-            auto new_left_init_wal = new_left_node.reserveWALEntry<WALInitPage>(0);
-            new_left_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-            new_left_init_wal->dt_id = dt_id;
-            new_left_init_wal.submit();
-            // -------------------------------------------------------------------------------------
-            WALLogicalSplit logical_split_entry;
-            logical_split_entry.type = WAL_LOG_TYPE::WALLogicalSplit;
-            logical_split_entry.right_pid = c_x_guard.getBufferFrame()->header.pid;
-            logical_split_entry.parent_pid = p_x_guard.getBufferFrame()->header.pid;
-            logical_split_entry.left_pid = new_left_node.getBufferFrame()->header.pid;
-            // -------------------------------------------------------------------------------------
-            auto current_right_wal = c_x_guard.reserveWALEntry<WALLogicalSplit>(0);
-            *current_right_wal = logical_split_entry;
-            current_right_wal.submit();
-            // -------------------------------------------------------------------------------------
-            exec();
-            // -------------------------------------------------------------------------------------
-            auto parent_wal = p_x_guard.reserveWALEntry<WALLogicalSplit>(0);
-            *parent_wal = logical_split_entry;
-            parent_wal.submit();
-            // -------------------------------------------------------------------------------------
-            auto left_init_wal = new_left_node.reserveWALEntry<WALInitPage>(0);
-            left_init_wal->type = WAL_LOG_TYPE::WALInitPage;
-            left_init_wal->dt_id = dt_id;
-            left_init_wal.submit();
-            auto left_wal = new_left_node.reserveWALEntry<WALLogicalSplit>(0);
-            *left_wal = logical_split_entry;
-            left_wal.submit();
-         } else {
-            exec();
-         }
+         exec();
       } else {
          p_guard.unlock();
          c_guard.unlock();

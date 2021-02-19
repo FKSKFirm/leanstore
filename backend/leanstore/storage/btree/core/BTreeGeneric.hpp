@@ -19,16 +19,6 @@ namespace storage
 namespace btree
 {
 // -------------------------------------------------------------------------------------
-struct WALInitPage : WALEntry {
-   DTID dt_id;
-};
-struct WALLogicalSplit : WALEntry {
-   PID parent_pid = -1;
-   PID left_pid = -1;
-   PID right_pid = -1;
-   s32 right_pos = -1;
-};
-// -------------------------------------------------------------------------------------
 class BTreeGeneric
 {
   public:

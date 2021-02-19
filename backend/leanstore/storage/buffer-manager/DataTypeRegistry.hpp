@@ -57,8 +57,8 @@ struct DataTypeRegistry {
    void checkpoint(DTID dt_id, BufferFrame& bf, u8*);
    // -------------------------------------------------------------------------------------
    // Recovery / SI
-   void undo(DTID dt_id, const u8* wal_entry, u64 tts);
-   void todo(DTID dt_id, const u8* wal_entry, u64 tts);
+   void undo(DTID dt_id, u64 tts);
+   void todo(DTID dt_id, u64 tts);
 };
 
 // -------------------------------------------------------------------------------------
