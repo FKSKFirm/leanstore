@@ -224,9 +224,9 @@ void BTreeLL::undo(void*, const u8*, const u64)
 // -------------------------------------------------------------------------------------
 void BTreeLL::todo(void*, const u8*, const u64) {}
 // -------------------------------------------------------------------------------------
-struct DTRegistry::DTMeta BTreeLL::getMeta()
+struct DataTypeRegistry::DTMeta BTreeLL::getMeta()
 {
-   DTRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
+   DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
                                     .find_parent = findParent,
                                     .check_space_utilization = checkSpaceUtilization,
                                     .checkpoint = checkpoint,

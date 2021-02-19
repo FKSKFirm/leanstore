@@ -10,9 +10,9 @@ namespace leanstore
 namespace cr
 {
 // -------------------------------------------------------------------------------------
-CRManager* CRManager::global = nullptr;
+WorkerThreadManager* WorkerThreadManager::global = nullptr;
 // -------------------------------------------------------------------------------------
-CRManager::CRManager(s32 ssd_fd, u64 end_of_block_device) : ssd_fd(ssd_fd), end_of_block_device(end_of_block_device)
+WorkerThreadManager::WorkerThreadManager(s32 ssd_fd, u64 end_of_block_device) : ssd_fd(ssd_fd), end_of_block_device(end_of_block_device)
 {
    workers_count = FLAGS_worker_threads;
    ensure(workers_count < MAX_WORKER_THREADS);
@@ -63,7 +63,7 @@ CRManager::CRManager(s32 ssd_fd, u64 end_of_block_device) : ssd_fd(ssd_fd), end_
    }
 }
 // -------------------------------------------------------------------------------------
-CRManager::~CRManager()
+WorkerThreadManager::~WorkerThreadManager()
 {
    keep_running = false;
 
@@ -77,7 +77,7 @@ CRManager::~CRManager()
    }
 }
 // -------------------------------------------------------------------------------------
-void CRManager::scheduleJobSync(u64 t_i, std::function<void()> job)
+void WorkerThreadManager::scheduleJobSync(u64 t_i, std::function<void()> job)
 {
    ensure(t_i < workers_count);
    auto& meta = worker_threads_meta[t_i];
@@ -92,7 +92,7 @@ void CRManager::scheduleJobSync(u64 t_i, std::function<void()> job)
    meta.cv.wait(guard, [&]() { return meta.job_done; });
 }
 // -------------------------------------------------------------------------------------
-void CRManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
+void WorkerThreadManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
 {
    ensure(t_i < workers_count);
    auto& meta = worker_threads_meta[t_i];
@@ -105,7 +105,7 @@ void CRManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
    meta.cv.notify_one();
 }
 // -------------------------------------------------------------------------------------
-void CRManager::joinAll()
+void WorkerThreadManager::joinAll()
 {
    for (u32 t_i = 0; t_i < workers_count; t_i++) {
       auto& meta = worker_threads_meta[t_i];

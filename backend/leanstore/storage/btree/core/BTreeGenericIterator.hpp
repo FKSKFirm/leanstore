@@ -192,7 +192,7 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
             if (cur == -1 || !keyFitsInCurrentNode(key)) {
                btree.findLeafCanJump<LATCH_FALLBACK_MODE::SHARED>(leaf, key.data(), key.length());
             }
-            BufferFrame* bf = leaf.bf;
+            BufferFrame* bf = leaf.bufferFrame;
             leaf.unlock();
             cur = -1;
             // -------------------------------------------------------------------------------------
@@ -248,16 +248,16 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
    {
       const u64 random_number = utils::RandomGenerator::getRandU64();
       if ((random_number & ((1ull << FLAGS_cm_update_on) - 1)) == 0) {
-         s64 last_modified_pos = leaf.bf->header.contention_tracker.last_modified_pos;
-         leaf.bf->header.contention_tracker.last_modified_pos = cur;
-         leaf.bf->header.contention_tracker.restarts_counter += leaf.hasFacedContention();
-         leaf.bf->header.contention_tracker.access_counter++;
+         s64 last_modified_pos = leaf.bufferFrame->header.contention_tracker.last_modified_pos;
+         leaf.bufferFrame->header.contention_tracker.last_modified_pos = cur;
+         leaf.bufferFrame->header.contention_tracker.restarts_counter += leaf.hasFacedContention();
+         leaf.bufferFrame->header.contention_tracker.access_counter++;
          if ((random_number & ((1ull << FLAGS_cm_period) - 1)) == 0) {
-            const u64 current_restarts_counter = leaf.bf->header.contention_tracker.restarts_counter;
-            const u64 current_access_counter = leaf.bf->header.contention_tracker.access_counter;
+            const u64 current_restarts_counter = leaf.bufferFrame->header.contention_tracker.restarts_counter;
+            const u64 current_access_counter = leaf.bufferFrame->header.contention_tracker.access_counter;
             const u64 normalized_restarts = 100.0 * current_restarts_counter / current_access_counter;
-            leaf.bf->header.contention_tracker.restarts_counter = 0;
-            leaf.bf->header.contention_tracker.access_counter = 0;
+            leaf.bufferFrame->header.contention_tracker.restarts_counter = 0;
+            leaf.bufferFrame->header.contention_tracker.access_counter = 0;
             // -------------------------------------------------------------------------------------
             if (last_modified_pos != cur && normalized_restarts >= FLAGS_cm_slowpath_threshold && leaf->count > 2) {
                s16 split_pos = std::min<s16>(last_modified_pos, cur);
@@ -265,7 +265,7 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
                cur = -1;
                jumpmuTry()
                {
-                  btree.trySplit(*leaf.bf, split_pos);
+                  btree.trySplit(*leaf.bufferFrame, split_pos);
                   WorkerCounters::myCounters().contention_split_succ_counter[btree.dt_id]++;
                }
                jumpmuCatch() { WorkerCounters::myCounters().contention_split_fail_counter[btree.dt_id]++; }
@@ -298,7 +298,7 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
       if (leaf->freeSpaceAfterCompaction() >= BTreeNodeHeader::underFullSize) {
          leaf.unlock();
          cur = -1;
-         jumpmuTry() { btree.tryMerge(*leaf.bf); }
+         jumpmuTry() { btree.tryMerge(*leaf.bufferFrame); }
          jumpmuCatch()
          {
             // nothing, it is fine not to merge

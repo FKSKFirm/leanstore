@@ -1,6 +1,6 @@
 #pragma once
 #include "BufferFrame.hpp"
-#include "DTRegistry.hpp"
+#include "DataTypeRegistry.hpp"
 #include "FreeList.hpp"
 #include "Partition.hpp"
 #include "Swip.hpp"
@@ -108,7 +108,7 @@ class BufferManager
    void writeAllBufferFrames();
    // -------------------------------------------------------------------------------------
    u64 getPoolSize() { return dram_pool_size; }
-   DTRegistry& getDTRegistry() { return DTRegistry::global_dt_registry; }
+   DataTypeRegistry& getDTRegistry() { return DataTypeRegistry::global_dt_registry; }
    u64 consumedPages();
    BufferFrame& getContainingBufferFrame(const u8*);  // get the buffer frame containing the given ptr address
 };                                                    // namespace storage

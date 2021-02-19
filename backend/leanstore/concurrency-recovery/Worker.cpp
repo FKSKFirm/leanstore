@@ -3,7 +3,7 @@
 #include "leanstore/Config.hpp"
 #include "leanstore/profiling/counters/CRCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
-#include "leanstore/storage/buffer-manager/DTRegistry.hpp"
+#include "leanstore/storage/buffer-manager/DataTypeRegistry.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <stdio.h>
@@ -157,27 +157,6 @@ void Worker::startTX()
             }
          }
          active_tx.tts = next_tts++;
-         if (FLAGS_vw && FLAGS_vw_todo && todo_list.size()) {  // Cleanup
-            {
-               u64 min = std::numeric_limits<u64>::max();
-               for (u64 w = 0; w < workers_count; w++) {
-                  min = std::min<u64>(min, lower_water_marks[w * 8]);
-               }
-               lower_water_mark = min;
-            }
-            while (todo_list.size()) {
-               auto& todo = todo_list.front();
-               if (todo.tts < lower_water_mark) {
-                  getWALEntry(todo.lsn, todo.in_memory_offset, [&](WALEntry* entry) {
-                     const auto& dt_entry = *reinterpret_cast<const WALDTEntry*>(entry);
-                     leanstore::storage::DTRegistry::global_dt_registry.todo(dt_entry.dt_id, dt_entry.payload, todo.tts);
-                  });
-                  todo_list.pop();
-               } else {
-                  break;
-               }
-            }
-         }
       }
    }
 }
@@ -211,7 +190,7 @@ void Worker::abortTX()
          const u64 tts = active_tx.tts;
          if (entry.type == WALEntry::TYPE::DT_SPECIFIC) {
             const auto& dt_entry = *reinterpret_cast<const WALDTEntry*>(&entry);
-            leanstore::storage::DTRegistry::global_dt_registry.undo(dt_entry.dt_id, dt_entry.payload, tts);
+            leanstore::storage::DataTypeRegistry::global_dt_registry.undo(dt_entry.dt_id, dt_entry.payload, tts);
          }
       });
       // -------------------------------------------------------------------------------------

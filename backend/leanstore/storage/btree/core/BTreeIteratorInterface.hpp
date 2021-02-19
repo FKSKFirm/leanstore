@@ -1,5 +1,5 @@
 #pragma once
-#include "BTreeInterface.hpp"
+#include "leanstore/storage/KeyValueInterface.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 using namespace leanstore::storage;

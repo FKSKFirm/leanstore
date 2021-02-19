@@ -1,9 +1,9 @@
 #pragma once
-#include "BTreeInterface.hpp"
 #include "BTreeIteratorInterface.hpp"
 #include "BTreeNode.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include "leanstore/storage/KeyValueInterface.hpp"
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/sync-primitives/PageGuard.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
@@ -68,6 +68,7 @@ class BTreeGeneric
    {
       target_guard.unlock();
       HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
+      //p_guard->upper is root
       target_guard = HybridPageGuard<BTreeNode>(p_guard, p_guard->upper);
       // -------------------------------------------------------------------------------------
       u16 volatile level = 0;
@@ -107,8 +108,8 @@ class BTreeGeneric
    // -------------------------------------------------------------------------------------
    // Helpers
    // -------------------------------------------------------------------------------------
-   inline bool isMetaNode(HybridPageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bf; }
-   inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bf(); }
+   inline bool isMetaNode(HybridPageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bufferFrame; }
+   inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard) { return meta_node_bf == guard.getBufferFrame(); }
    s64 iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
    s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
    u64 countInner();

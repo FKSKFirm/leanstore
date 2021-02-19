@@ -1,5 +1,5 @@
 #pragma once
-#include "BTreeNode.hpp"
+#include "leanstore/storage/btree/core/BTreeNode.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -8,8 +8,6 @@ using namespace leanstore::storage;
 namespace leanstore
 {
 namespace storage
-{
-namespace btree
 {
 enum class WAL_LOG_TYPE : u8 {
    WALInsert = 1,
@@ -32,7 +30,7 @@ struct WALUpdateGenerator {
 };
 // -------------------------------------------------------------------------------------
 // Interface
-class BTreeInterface
+class KeyValueInterface
 {
   public:
    virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) = 0;
@@ -53,7 +51,6 @@ class BTreeInterface
    virtual u64 getHeight() = 0;
 };
 // -------------------------------------------------------------------------------------
-}  // namespace btree
 }  // namespace storage
 using Slice = std::basic_string_view<u8>;
 using StringU = std::basic_string<u8>;

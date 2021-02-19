@@ -56,9 +56,10 @@ LeanStore::LeanStore()
    buffer_manager = make_unique<storage::BufferManager>(ssd_fd);
    BMC::global_bf = buffer_manager.get();
    // -------------------------------------------------------------------------------------
-   DTRegistry::global_dt_registry.registerDatastructureType(0, storage::btree::BTreeLL::getMeta());
-   DTRegistry::global_dt_registry.registerDatastructureType(1, storage::btree::BTreeVW::getMeta());
-   DTRegistry::global_dt_registry.registerDatastructureType(2, storage::btree::BTreeVI::getMeta());
+   DataTypeRegistry::global_dt_registry.registerDatastructureType(0, storage::btree::BTreeLL::getMeta());
+   //DataTypeRegistry::global_dt_registry.registerDatastructureType(2, storage::btree::BTreeVI::getMeta());
+   DataTypeRegistry::global_dt_registry.registerDatastructureType(3, storage::lsmtree::BTree::getMeta());
+   //DataTypeRegistry::global_dt_registry.registerDatastructureType(4, storage::lsmtree::LSMTree::getMeta());
    // -------------------------------------------------------------------------------------
    u64 end_of_block_device;
    if (FLAGS_wal_offset_gib == 0) {
@@ -66,8 +67,8 @@ LeanStore::LeanStore()
    } else {
       end_of_block_device = FLAGS_wal_offset_gib * 1024 * 1024 * 1024;
    }
-   cr_manager = make_unique<cr::CRManager>(ssd_fd, end_of_block_device);
-   cr::CRManager::global = cr_manager.get();
+   cr_manager = make_unique<cr::WorkerThreadManager>(ssd_fd, end_of_block_device);
+   cr::WorkerThreadManager::global = cr_manager.get();
 }
 // -------------------------------------------------------------------------------------
 LeanStore::~LeanStore()
@@ -192,7 +193,7 @@ storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
 {
    assert(btrees_ll.find(name) == btrees_ll.end());
    auto& btree = btrees_ll[name];
-   DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
+   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
    auto& bf = buffer_manager->allocatePage();
    Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
    bf.header.keep_in_memory = true;
@@ -202,34 +203,36 @@ storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
    return btree;
 }
 
-// -------------------------------------------------------------------------------------
-storage::btree::BTreeVW& LeanStore::registerBTreeVW(string name)
+// TODO -------------------------------------------------------------------------------------
+storage::lsmtree::BTree& LeanStore::registerOwnBTree(string name)
 {
-   assert(btrees_vw.find(name) == btrees_vw.end());
-   auto& btree = btrees_vw[name];
-   DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&btree), name);
+   assert(ownBTrees.find(name) == ownBTrees.end());
+   auto& ownBTree = ownBTrees[name];
+   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&ownBTree), name);
    auto& bf = buffer_manager->allocatePage();
    Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
    bf.header.keep_in_memory = true;
    bf.page.dt_id = dtid;
    guard.unlock();
-   btree.create(dtid, &bf);
-   return btree;
+   ownBTree.create(dtid, &bf);
+   return ownBTree;
 }
-// -------------------------------------------------------------------------------------
-storage::btree::BTreeVI& LeanStore::registerBTreeVI(string name)
-{
-   assert(btrees_vi.find(name) == btrees_vi.end());
-   auto& btree = btrees_vi[name];
-   DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(2, reinterpret_cast<void*>(&btree), name);
-   auto& bf = buffer_manager->allocatePage();
-   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
-   bf.header.keep_in_memory = true;
-   bf.page.dt_id = dtid;
-   guard.unlock();
-   btree.create(dtid, &bf);
-   return btree;
-}
+
+// TODO -------------------------------------------------------------------------------------
+//storage::lsmtree::LSMTree& LeanStore::registerLSMTree(string name)
+//{
+//   assert(lsmTrees.find(name) == lsmTrees.end());
+//   auto& lsmTree = lsmTrees[name];
+//   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&lsmTree), name);
+//   auto& bf = buffer_manager->allocatePage();
+//   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+//   bf.header.keep_in_memory = true;
+//   bf.page.dt_id = dtid;
+//   guard.unlock();
+//   lsmTree.create(dtid, &bf);
+//   return lsmTree;
+//}
+
 // -------------------------------------------------------------------------------------
 u64 LeanStore::getConfigHash()
 {

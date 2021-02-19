@@ -22,7 +22,7 @@ struct alignas(512) SSDMeta {
    u64 last_written_chunk;
 };
 // -------------------------------------------------------------------------------------
-void CRManager::groupCommiter()
+void WorkerThreadManager::groupCommiter()
 {
    using Time = decltype(std::chrono::high_resolution_clock::now());
    [[maybe_unused]] Time phase_1_begin, phase_1_end, phase_2_begin, phase_2_end, write_begin, write_end;

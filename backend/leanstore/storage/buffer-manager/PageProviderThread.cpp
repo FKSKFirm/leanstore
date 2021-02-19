@@ -45,7 +45,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       // -------------------------------------------------------------------------------------
       [[maybe_unused]] Time phase_1_begin, phase_1_end;
       COUNTERS_BLOCK() { phase_1_begin = std::chrono::high_resolution_clock::now(); }
-      BufferFrame* volatile r_buffer = &randomBufferFrame();  // Attention: we may set the r_buffer to a child of a bf instead of random
+      BufferFrame* volatile r_buffer = &randomBufferFrame();  // Attention: we may set the r_buffer to a child of a getBufferFrame instead of random
       volatile u64 failed_attempts =
           0;  // [corner cases]: prevent starving when free list is empty and cooling to the required level can not be achieved
 #define repickIf(cond)                 \

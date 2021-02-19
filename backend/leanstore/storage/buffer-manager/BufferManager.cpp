@@ -181,7 +181,7 @@ BufferFrame& BufferManager::allocatePage()
    return free_bf;
 }
 // -------------------------------------------------------------------------------------
-// Pre: bf is exclusively locked
+// Pre: getBufferFrame is exclusively locked
 // ATTENTION: this function unlocks it !!
 // -------------------------------------------------------------------------------------
 void BufferManager::reclaimPage(BufferFrame& bf)
@@ -244,7 +244,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       readPageSync(pid, bf.page);
       COUNTERS_BLOCK()
       {
-        // WorkerCounters::myCounters().dt_misses_counter[bf.page.dt_id]++;
+        // WorkerCounters::myCounters().dt_misses_counter[getBufferFrame.page.dt_id]++;
          if (FLAGS_trace_dt_id >= 0 && bf.page.dt_id == FLAGS_trace_dt_id &&
              utils::RandomGenerator::getRand<u64>(0, FLAGS_trace_trigger_probability) == 0) {
             utils::printBackTrace();
@@ -309,7 +309,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       // -------------------------------------------------------------------------------------
       BufferFrame* bf = io_frame.bf;
       {
-         // We have to exclusively lock the bf because the page provider thread will
+         // We have to exclusively lock the getBufferFrame because the page provider thread will
          // try to evict them when its IO is done
          bf->header.latch.assertNotExclusivelyLatched();
          assert(bf->header.state == BufferFrame::STATE::LOADED);

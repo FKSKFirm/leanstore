@@ -23,28 +23,28 @@ template <typename T>
 class HybridPageGuard
 {
   public:
-   BufferFrame* bf = nullptr;
+   BufferFrame* bufferFrame = nullptr;
    Guard guard;
    bool keep_alive = true;
    // -------------------------------------------------------------------------------------
    // Constructors
-   HybridPageGuard() : bf(nullptr), guard(nullptr) { jumpmu_registerDestructor(); }  // use with caution
-   HybridPageGuard(Guard& guard, BufferFrame* bf) : bf(bf), guard(std::move(guard)) { jumpmu_registerDestructor(); }
+   HybridPageGuard() : bufferFrame(nullptr), guard(nullptr) { jumpmu_registerDestructor(); }  // use with caution
+   HybridPageGuard(Guard& guard, BufferFrame* bf) : bufferFrame(bf), guard(std::move(guard)) { jumpmu_registerDestructor(); }
    // -------------------------------------------------------------------------------------
    HybridPageGuard(HybridPageGuard& other) = delete;   // Copy constructor
    HybridPageGuard(HybridPageGuard&& other) = delete;  // Move constructor
    // -------------------------------------------------------------------------------------
    // I: Allocate a new page
    HybridPageGuard(DTID dt_id, bool keep_alive = true)
-       : bf(&BMC::global_bf->allocatePage()), guard(bf->header.latch, GUARD_STATE::EXCLUSIVE), keep_alive(keep_alive)
+       : bufferFrame(&BMC::global_bf->allocatePage()), guard(bufferFrame->header.latch, GUARD_STATE::EXCLUSIVE), keep_alive(keep_alive)
    {
       assert(BMC::global_bf != nullptr);
-      bf->page.dt_id = dt_id;
+      bufferFrame->page.dt_id = dt_id;
       jumpmu_registerDestructor();
    }
    // -------------------------------------------------------------------------------------
    // I: Root case
-   HybridPageGuard(BufferFrame* bf) : bf(bf), guard(bf->header.latch)
+   HybridPageGuard(BufferFrame* bf) : bufferFrame(bf), guard(bf->header.latch)
    {
       guard.toOptimisticSpin();
       syncGSN();
@@ -54,7 +54,7 @@ class HybridPageGuard
    // I: Lock coupling
    template <typename T2>
    HybridPageGuard(HybridPageGuard<T2>& p_guard, Swip<T>& swip, const LATCH_FALLBACK_MODE if_contended = LATCH_FALLBACK_MODE::SPIN)
-       : bf(&BMC::global_bf->tryFastResolveSwip(p_guard.guard, swip.template cast<BufferFrame>())), guard(bf->header.latch)
+       : bufferFrame(&BMC::global_bf->tryFastResolveSwip(p_guard.guard, swip.template cast<BufferFrame>())), guard(bufferFrame->header.latch)
    {
       if (if_contended == LATCH_FALLBACK_MODE::SPIN) {
          guard.toOptimisticSpin();
@@ -68,7 +68,7 @@ class HybridPageGuard
       // -------------------------------------------------------------------------------------
       DEBUG_BLOCK()
       {
-         [[maybe_unused]] DTID p_dt_id = p_guard.bf->page.dt_id, dt_id = bf->page.dt_id;
+         [[maybe_unused]] DTID p_dt_id = p_guard.bufferFrame->page.dt_id, dt_id = bufferFrame->page.dt_id;
          p_guard.recheck();
          recheck();
          assert(p_dt_id == dt_id);
@@ -96,20 +96,20 @@ class HybridPageGuard
    template <typename T2>
    constexpr HybridPageGuard& operator=(HybridPageGuard<T2>&& other)
    {
-      bf = other.bf;
+      bufferFrame = other.bufferFrame;
       guard = std::move(other.guard);
       keep_alive = other.keep_alive;
       return *this;
    }
    // -------------------------------------------------------------------------------------
-   inline void incrementGSN() { bf->page.GSN++; }
+   inline void incrementGSN() { bufferFrame->page.GSN++; }
    // WAL
    inline void syncGSN()
    {
       if (FLAGS_wal) {
          auto current_gsn = cr::Worker::my().getCurrentGSN();
-         if (current_gsn < bf->page.GSN) {
-            cr::Worker::my().setCurrentGSN(bf->page.GSN);
+         if (current_gsn < bufferFrame->page.GSN) {
+            cr::Worker::my().setCurrentGSN(bufferFrame->page.GSN);
          }
       }
    }
@@ -118,12 +118,12 @@ class HybridPageGuard
    {
       assert(FLAGS_wal);
       assert(guard.state == GUARD_STATE::EXCLUSIVE);
-      const LID gsn = std::max<LID>(bf->page.GSN, cr::Worker::my().getCurrentGSN()) + 1;
-      bf->page.GSN = gsn;
+      const LID gsn = std::max<LID>(bufferFrame->page.GSN, cr::Worker::my().getCurrentGSN()) + 1;
+      bufferFrame->page.GSN = gsn;
       cr::Worker::my().setCurrentGSN(gsn);
       // -------------------------------------------------------------------------------------
-      const auto pid = bf->header.pid;
-      const auto dt_id = bf->page.dt_id;
+      const auto pid = bufferFrame->header.pid;
+      const auto dt_id = bufferFrame->page.dt_id;
       auto handler = cr::Worker::my().reserveDTEntry<WT>(sizeof(WT) + extra_size, pid, gsn, dt_id);
       return handler;
    }
@@ -133,10 +133,10 @@ class HybridPageGuard
    inline void unlock() { guard.unlock(); }
    inline void recheck() { guard.recheck(); }
    // -------------------------------------------------------------------------------------
-   inline T& ref() { return *reinterpret_cast<T*>(bf->page.dt); }
-   inline T* ptr() { return reinterpret_cast<T*>(bf->page.dt); }
-   inline Swip<T> swip() { return Swip<T>(bf); }
-   inline T* operator->() { return reinterpret_cast<T*>(bf->page.dt); }
+   inline T& ref() { return *reinterpret_cast<T*>(bufferFrame->page.dt); }
+   inline T* ptr() { return reinterpret_cast<T*>(bufferFrame->page.dt); }
+   inline Swip<T> swip() { return Swip<T>(bufferFrame); }
+   inline T* operator->() { return reinterpret_cast<T*>(bufferFrame->page.dt); }
    // -------------------------------------------------------------------------------------
    // Use with caution!
    void toShared() { guard.toShared(); }
@@ -144,7 +144,7 @@ class HybridPageGuard
    // -------------------------------------------------------------------------------------
    void reclaim()
    {
-      BMC::global_bf->reclaimPage(*(bf));
+      BMC::global_bf->reclaimPage(*(bufferFrame));
       guard.state = GUARD_STATE::MOVED;
    }
    // -------------------------------------------------------------------------------------
@@ -190,7 +190,7 @@ class ExclusivePageGuard
    template <typename... Args>
    void init(Args&&... args)
    {
-      new (ref_guard.bf->page.dt) T(std::forward<Args>(args)...);
+      new (ref_guard.bufferFrame->page.dt) T(std::forward<Args>(args)...);
    }
    // -------------------------------------------------------------------------------------
    void keepAlive() { ref_guard.keep_alive = true; }
@@ -204,11 +204,11 @@ class ExclusivePageGuard
       }
    }
    // -------------------------------------------------------------------------------------
-   inline T& ref() { return *reinterpret_cast<T*>(ref_guard.bf->page.dt); }
-   inline T* ptr() { return reinterpret_cast<T*>(ref_guard.bf->page.dt); }
-   inline Swip<T> swip() { return Swip<T>(ref_guard.bf); }
-   inline T* operator->() { return reinterpret_cast<T*>(ref_guard.bf->page.dt); }
-   inline BufferFrame* bf() { return ref_guard.bf; }
+   inline T& ref() { return *reinterpret_cast<T*>(ref_guard.bufferFrame->page.dt); }
+   inline T* ptr() { return reinterpret_cast<T*>(ref_guard.bufferFrame->page.dt); }
+   inline Swip<T> swip() { return Swip<T>(ref_guard.bufferFrame); }
+   inline T* operator->() { return reinterpret_cast<T*>(ref_guard.bufferFrame->page.dt); }
+   inline BufferFrame* getBufferFrame() { return ref_guard.bufferFrame; }
    inline void reclaim() { ref_guard.reclaim(); }
 };
 // -------------------------------------------------------------------------------------
@@ -222,10 +222,10 @@ class SharedPageGuard
    // -------------------------------------------------------------------------------------
    ~SharedPageGuard() { ref_guard.unlock(); }
    // -------------------------------------------------------------------------------------
-   inline T& ref() { return *reinterpret_cast<T*>(ref_guard.bf->page.dt); }
-   inline T* ptr() { return reinterpret_cast<T*>(ref_guard.bf->page.dt); }
-   inline Swip<T> swip() { return Swip<T>(ref_guard.bf); }
-   inline T* operator->() { return reinterpret_cast<T*>(ref_guard.bf->page.dt); }
+   inline T& ref() { return *reinterpret_cast<T*>(ref_guard.bufferFrame->page.dt); }
+   inline T* ptr() { return reinterpret_cast<T*>(ref_guard.bufferFrame->page.dt); }
+   inline Swip<T> swip() { return Swip<T>(ref_guard.bufferFrame); }
+   inline T* operator->() { return reinterpret_cast<T*>(ref_guard.bufferFrame->page.dt); }
 };
 // -------------------------------------------------------------------------------------
 }  // namespace storage

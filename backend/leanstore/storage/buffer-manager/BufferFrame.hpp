@@ -60,7 +60,7 @@ struct BufferFrame {
    // -------------------------------------------------------------------------------------
    inline bool isDirty() const { return header.lastWrittenGSN != page.GSN; }
    // -------------------------------------------------------------------------------------
-   // Pre: bf is exclusively locked
+   // Pre: getBufferFrame is exclusively locked
    void reset()
    {
       header.debug = header.pid;

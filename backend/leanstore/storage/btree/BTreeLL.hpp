@@ -1,8 +1,8 @@
 #pragma once
 #include "core/BTreeGeneric.hpp"
-#include "core/BTreeInterface.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
+#include "leanstore/storage/KeyValueInterface.hpp"
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/sync-primitives/PageGuard.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
@@ -18,7 +18,7 @@ namespace storage
 namespace btree
 {
 // -------------------------------------------------------------------------------------
-class BTreeLL : public BTreeInterface, public BTreeGeneric
+class BTreeLL : public KeyValueInterface, public BTreeGeneric
 {
   public:
    struct WALBeforeAfterImage : WALEntry {
@@ -64,7 +64,7 @@ class BTreeLL : public BTreeInterface, public BTreeGeneric
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);
    static void undo(void* btree_object, const u8* wal_entry_ptr, const u64 tts);
    static void todo(void* btree_object, const u8* wal_entry_ptr, const u64 tts);
-   static DTRegistry::DTMeta getMeta();
+   static DataTypeRegistry::DTMeta getMeta();
 };
 // -------------------------------------------------------------------------------------
 }  // namespace btree

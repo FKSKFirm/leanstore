@@ -29,7 +29,7 @@ void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf)
    this->dt_id = dtid;
    HybridPageGuard<BTreeNode> meta_guard(meta_bf);
    ExclusivePageGuard meta_page(std::move(meta_guard));
-   meta_page->upper = root_write_guard.bf();  // HACK: use upper of meta node as a swip to the storage root
+   meta_page->upper = root_write_guard.getBufferFrame();  // HACK: use upper of meta node as a swip to the storage root
 }
 // -------------------------------------------------------------------------------------
 void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
@@ -68,8 +68,8 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       auto exec = [&]() {
          new_root.keepAlive();
          new_root.init(false);
-         new_root->upper = c_x_guard.bf();
-         p_x_guard->upper = new_root.bf();
+         new_root->upper = c_x_guard.getBufferFrame();
+         p_x_guard->upper = new_root.getBufferFrame();
          // -------------------------------------------------------------------------------------
          new_left_node.init(c_x_guard->is_leaf);
          c_x_guard->getSep(sep_key, sep_info);
@@ -88,9 +88,9 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          // -------------------------------------------------------------------------------------
          WALLogicalSplit logical_split_entry;
          logical_split_entry.type = WAL_LOG_TYPE::WALLogicalSplit;
-         logical_split_entry.right_pid = c_x_guard.bf()->header.pid;
-         logical_split_entry.parent_pid = new_root.bf()->header.pid;
-         logical_split_entry.left_pid = new_left_node.bf()->header.pid;
+         logical_split_entry.right_pid = c_x_guard.getBufferFrame()->header.pid;
+         logical_split_entry.parent_pid = new_root.getBufferFrame()->header.pid;
+         logical_split_entry.left_pid = new_left_node.getBufferFrame()->header.pid;
          // -------------------------------------------------------------------------------------
          auto current_right_wal = c_x_guard.reserveWALEntry<WALLogicalSplit>(0);
          *current_right_wal = logical_split_entry;
@@ -120,7 +120,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          auto p_x_guard = ExclusivePageGuard(std::move(p_guard));
          auto c_x_guard = ExclusivePageGuard(std::move(c_guard));
          p_x_guard->requestSpaceFor(space_needed_for_separator);
-         assert(meta_node_bf != p_x_guard.bf());
+         assert(meta_node_bf != p_x_guard.getBufferFrame());
          assert(!p_x_guard->is_leaf);
          // -------------------------------------------------------------------------------------
          auto new_left_node_h = HybridPageGuard<BTreeNode>(dt_id);
@@ -140,9 +140,9 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
             // -------------------------------------------------------------------------------------
             WALLogicalSplit logical_split_entry;
             logical_split_entry.type = WAL_LOG_TYPE::WALLogicalSplit;
-            logical_split_entry.right_pid = c_x_guard.bf()->header.pid;
-            logical_split_entry.parent_pid = p_x_guard.bf()->header.pid;
-            logical_split_entry.left_pid = new_left_node.bf()->header.pid;
+            logical_split_entry.right_pid = c_x_guard.getBufferFrame()->header.pid;
+            logical_split_entry.parent_pid = p_x_guard.getBufferFrame()->header.pid;
+            logical_split_entry.left_pid = new_left_node.getBufferFrame()->header.pid;
             // -------------------------------------------------------------------------------------
             auto current_right_wal = c_x_guard.reserveWALEntry<WALLogicalSplit>(0);
             *current_right_wal = logical_split_entry;
@@ -167,7 +167,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       } else {
          p_guard.unlock();
          c_guard.unlock();
-         trySplit(*p_guard.bf);  // Must split parent head to make space for separator
+         trySplit(*p_guard.bufferFrame);  // Must split parent head to make space for separator
       }
    }
 }
@@ -232,7 +232,7 @@ bool BTreeGeneric::tryMerge(BufferFrame& to_merge, bool swizzle_sibling)
       auto c_x_guard = ExclusivePageGuard(std::move(c_guard));
       auto r_x_guard = ExclusivePageGuard(std::move(r_guard));
       // -------------------------------------------------------------------------------------
-      assert(p_x_guard->getChild(pos).bfPtr() == c_x_guard.bf());
+      assert(p_x_guard->getChild(pos).bfPtr() == c_x_guard.getBufferFrame());
       if (!c_x_guard->merge(pos, p_x_guard, r_x_guard)) {
          p_guard = std::move(p_x_guard);
          c_guard = std::move(c_x_guard);
@@ -261,7 +261,7 @@ bool BTreeGeneric::tryMerge(BufferFrame& to_merge, bool swizzle_sibling)
    {
       HybridPageGuard<BTreeNode> meta_guard(meta_node_bf);
       if (!isMetaNode(p_guard) && p_guard->freeSpaceAfterCompaction() >= BTreeNode::underFullSize) {
-         tryMerge(*p_guard.bf, swizzle_sibling);
+         tryMerge(*p_guard.bufferFrame, swizzle_sibling);
       }
    }
    jumpmuCatch() {}
@@ -477,7 +477,7 @@ void BTreeGeneric::checkpoint(void*, BufferFrame& bf, u8* dest)
 }
 // -------------------------------------------------------------------------------------
 // TODO: Refactor
-// Jump if any page on the path is already evicted or of the bf could not be found
+// Jump if any page on the path is already evicted or of the getBufferFrame could not be found
 // to_find is not latched
 struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFrame& to_find)
 {
@@ -495,13 +495,13 @@ struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFra
    const u16 key_length = c_node.upper_fence.length;
    u8* key = c_node.getUpperFenceKey();
    // -------------------------------------------------------------------------------------
-   // check if bf is the root node
+   // check if getBufferFrame is the root node
    if (c_swip->bfPtrAsHot() == &to_find) {
       p_guard.recheck();
       return {.swip = c_swip->cast<BufferFrame>(), .parent_guard = std::move(p_guard.guard), .parent_bf = btree.meta_node_bf};
    }
    // -------------------------------------------------------------------------------------
-   HybridPageGuard c_guard(p_guard, p_guard->upper);  // the parent of the bf we are looking for (to_find)
+   HybridPageGuard c_guard(p_guard, p_guard->upper);  // the parent of the getBufferFrame we are looking for (to_find)
    s16 pos = -1;
    auto search_condition = [&]() {
       if (infinity) {
@@ -531,12 +531,12 @@ struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFra
    if (!found) {
       jumpmu::jump();
    }
-   return {.swip = c_swip->cast<BufferFrame>(), .parent_guard = std::move(c_guard.guard), .parent_bf = c_guard.bf, .pos = pos};
+   return {.swip = c_swip->cast<BufferFrame>(), .parent_guard = std::move(c_guard.guard), .parent_bf = c_guard.bufferFrame, .pos = pos};
 }
 // -------------------------------------------------------------------------------------
 void BTreeGeneric::iterateChildrenSwips(void*, BufferFrame& bf, std::function<bool(Swip<BufferFrame>&)> callback)
 {
-   // Pre: bf is read locked
+   // Pre: getBufferFrame is read locked
    auto& c_node = *reinterpret_cast<BTreeNode*>(bf.page.dt);
    if (c_node.is_leaf) {
       return;
