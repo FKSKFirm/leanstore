@@ -544,6 +544,6 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
         << " rootCnt:" << r_guard->count << " bytesFree:" << bytesFree() << endl;
 }
 // -------------------------------------------------------------------------------------
-}  // namespace keyValueDataStore
+}  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

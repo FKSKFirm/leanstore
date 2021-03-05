@@ -22,6 +22,8 @@ namespace storage
 {
 namespace btree
 {
+static const unsigned btreePageSize = EFFECTIVE_PAGE_SIZE;
+
 // -------------------------------------------------------------------------------------
 struct BTreeNode;
 using SwipType = Swip<BTreeNode>;
@@ -293,6 +295,6 @@ struct BTreeNode : public BTreeNodeHeader {
 // -------------------------------------------------------------------------------------
 static_assert(sizeof(BTreeNode) == EFFECTIVE_PAGE_SIZE, "BTreeNode must be equal to one page");
 // -------------------------------------------------------------------------------------
-}  // namespace keyValueDataStore
+}  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

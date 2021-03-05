@@ -31,7 +31,7 @@ struct LeanStoreAdapter {
       } else if (FLAGS_vi) {
          //removed
       } else if (FLAGS_lsm) {
-//         keyValueDataStore = &db.registerOwnBTree(name);
+         keyValueDataStore = &db.registerLsmTree(name);
          //keyValueDataStore = &db.registerLSMTree(name);
       } else {
          keyValueDataStore = &db.registerBTreeLL(name);
@@ -41,7 +41,7 @@ struct LeanStoreAdapter {
    void printTreeHeight() { cout << name << " height = " << keyValueDataStore->getHeight() << endl; }
    // -------------------------------------------------------------------------------------
    template <class Fn>
-   void scanDesc(const typename Record::Key& key, const Fn& fn, std::function<void()> undo)
+   void scanDesc(const typename Record::Key& key, const Fn& fn)
    {
       // TODO what does the Record respective fold?
       u8 folded_key[Record::maxFoldLength()];
@@ -57,8 +57,7 @@ struct LeanStoreAdapter {
              Record::unfoldRecord(key, typed_key);
              const Record& typed_payload = *reinterpret_cast<const Record*>(payload);
              return fn(typed_key, typed_payload);
-          },
-          undo);
+          });
    }
    // -------------------------------------------------------------------------------------
    void insert(const typename Record::Key& rec_key, const Record& record)
@@ -114,7 +113,7 @@ struct LeanStoreAdapter {
    }
    // -------------------------------------------------------------------------------------
    template <class Fn>
-   void scan(const typename Record::Key& key, const Fn& fn, std::function<void()> undo)
+   void scan(const typename Record::Key& key, const Fn& fn)
    {
       u8 folded_key[Record::maxFoldLength()];
       u16 folded_key_len = Record::foldRecord(folded_key, key);
@@ -129,8 +128,7 @@ struct LeanStoreAdapter {
              Record::unfoldRecord(key, typed_key);
              const Record& typed_payload = *reinterpret_cast<const Record*>(payload);
              return fn(typed_key, typed_payload);
-          },
-          undo);
+          });
    }
    // -------------------------------------------------------------------------------------
    template <class Field>

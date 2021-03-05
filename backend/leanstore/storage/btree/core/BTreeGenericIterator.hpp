@@ -147,7 +147,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
    virtual Slice keyWithoutPrefix() override { return Slice(leaf->getKey(cur), leaf->getKeyLen(cur)); }
    virtual u16 valueLength() { return leaf->getPayloadLength(cur); }
    virtual Slice value() override { return Slice(leaf->getPayload(cur), leaf->getPayloadLength(cur)); }
-};  // namespace keyValueDataStore
+};  // namespace btree
 // -------------------------------------------------------------------------------------
 using BTreeSharedIterator = BTreePessimisticIterator<LATCH_FALLBACK_MODE::SHARED>;
 class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MODE::EXCLUSIVE>
@@ -288,6 +288,6 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
    }
 };
 // -------------------------------------------------------------------------------------
-}  // namespace keyValueDataStore
+}  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

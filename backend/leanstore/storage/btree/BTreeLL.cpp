@@ -17,6 +17,7 @@ namespace storage
 namespace btree
 {
 // -------------------------------------------------------------------------------------
+// lookup for a value, identified by key, key has length of key_length; payload_callback checks if it is the correct and expected payload
 OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback)
 {
    volatile u32 mask = 1;
@@ -57,8 +58,7 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::scanAsc(u8* start_key,
                            u16 key_length,
-                           std::function<bool(const u8* key, u16 key_length, const u8* payload, u16 payload_length)> callback,
-                           function<void()>)
+                           std::function<bool(const u8* key, u16 key_length, const u8* payload, u16 payload_length)> callback)
 {
    Slice key(start_key, key_length);
    jumpmuTry()
@@ -83,7 +83,7 @@ OP_RESULT BTreeLL::scanAsc(u8* start_key,
    jumpmuCatch() { ensure(false); }
 }
 // -------------------------------------------------------------------------------------
-OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(const u8*, u16, const u8*, u16)> callback, function<void()>)
+OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(const u8*, u16, const u8*, u16)> callback)
 {
    Slice key(start_key, key_length);
    jumpmuTry()
@@ -191,6 +191,6 @@ struct ParentSwipHandler BTreeLL::findParent(void* btree_object, BufferFrame& to
    return BTreeGeneric::findParent(*static_cast<BTreeGeneric*>(reinterpret_cast<BTreeLL*>(btree_object)), to_find);
 }
 // -------------------------------------------------------------------------------------
-}  // namespace keyValueDataStore
+}  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

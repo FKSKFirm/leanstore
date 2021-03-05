@@ -27,12 +27,10 @@ class BTreeLL : public KeyValueInterface, public BTreeGeneric
    virtual OP_RESULT remove(u8* key, u16 key_length) override;
    virtual OP_RESULT scanAsc(u8* start_key,
                              u16 key_length,
-                             function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>,
-                             function<void()>) override;
+                             function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;
    virtual OP_RESULT scanDesc(u8* start_key,
                               u16 key_length,
-                              function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>,
-                              function<void()>) override;
+                              function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;
    // -------------------------------------------------------------------------------------
    virtual u64 countPages() override;
    virtual u64 countEntries() override;
@@ -42,6 +40,6 @@ class BTreeLL : public KeyValueInterface, public BTreeGeneric
    static DataTypeRegistry::DTMeta getMeta();
 };
 // -------------------------------------------------------------------------------------
-}  // namespace keyValueDataStore
+}  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

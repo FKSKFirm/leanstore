@@ -56,14 +56,18 @@ class BTreeGeneric
    inline void findLeafCanJump(HybridPageGuard<BTreeNode>& target_guard, const u8* key, const u16 key_length)
    {
       target_guard.unlock();
+      // get the meta node
       HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
-      //p_guard->upper is root
+      // p_guard->upper is root, target_guard set to the root node
       target_guard = HybridPageGuard<BTreeNode>(p_guard, p_guard->upper);
       // -------------------------------------------------------------------------------------
       u16 volatile level = 0;
       // -------------------------------------------------------------------------------------
+      // search for the leaf node
       while (!target_guard->is_leaf) {
+         // search in current node (target_guard) to correct link to child
          Swip<BTreeNode>& c_swip = target_guard->lookupInner(key, key_length);
+         //
          p_guard = std::move(target_guard);
          if (level == height - 1) {
             target_guard = HybridPageGuard(p_guard, c_swip, mode);
@@ -110,6 +114,6 @@ class BTreeGeneric
    void printInfos(uint64_t totalSize);
 };
 // -------------------------------------------------------------------------------------
-}  // namespace keyValueDataStore
+}  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

@@ -365,15 +365,12 @@ void delivery(Integer w_id, Integer carrier_id, Timestamp datetime)
 {
    for (Integer d_id = 1; d_id <= 10; d_id++) {
       Integer o_id = minInteger;
-      neworder.scan(
-          {w_id, d_id, minInteger},
-          [&](const neworder_t::Key& key, const neworder_t&) {
-             if (key.no_w_id == w_id && key.no_d_id == d_id) {
-                o_id = key.no_o_id;
-             }
-             return false;
-          },
-          [&]() { o_id = minInteger; });
+      neworder.scan({w_id, d_id, minInteger}, [&](const neworder_t::Key& key, const neworder_t&) {
+         if (key.no_w_id == w_id && key.no_d_id == d_id) {
+            o_id = key.no_o_id;
+         }
+         return false;
+      });
       if (o_id == minInteger)
          continue;
       // -------------------------------------------------------------------------------------
@@ -389,36 +386,30 @@ void delivery(Integer w_id, Integer carrier_id, Timestamp datetime)
       Integer ol_cnt, c_id;
 
       bool is_safe_to_continue = false;
-      order.scan(
-          {w_id, d_id, o_id},
-          [&](const order_t::Key& key, const order_t& rec) {
-             if (key.o_w_id == w_id && key.o_d_id == d_id && key.o_id == o_id) {
-                is_safe_to_continue = true;
-                ol_cnt = rec.o_ol_cnt;
-                c_id = rec.o_c_id;
-             } else {
-                is_safe_to_continue = false;
-             }
-             return false;
-          },
-          [&]() { is_safe_to_continue = false; });
+      order.scan({w_id, d_id, o_id}, [&](const order_t::Key& key, const order_t& rec) {
+         if (key.o_w_id == w_id && key.o_d_id == d_id && key.o_id == o_id) {
+            is_safe_to_continue = true;
+            ol_cnt = rec.o_ol_cnt;
+            c_id = rec.o_c_id;
+         } else {
+            is_safe_to_continue = false;
+         }
+         return false;
+      });
       if (!is_safe_to_continue)
          continue;
       order.update1(
           {w_id, d_id, o_id}, [&](order_t& rec) { rec.o_carrier_id = carrier_id; });
       // -------------------------------------------------------------------------------------
       // First check if all orderlines have been inserted, a hack because of the missing transaction and concurrency control
-      orderline.scan(
-          {w_id, d_id, o_id, ol_cnt},
-          [&](const orderline_t::Key& key, const orderline_t&) {
-             if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id && key.ol_number == ol_cnt) {
-                is_safe_to_continue = true;
-             } else {
-                is_safe_to_continue = false;
-             }
-             return false;
-          },
-          [&]() { is_safe_to_continue = false; });
+      orderline.scan({w_id, d_id, o_id, ol_cnt}, [&](const orderline_t::Key& key, const orderline_t&) {
+         if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id && key.ol_number == ol_cnt) {
+            is_safe_to_continue = true;
+         } else {
+            is_safe_to_continue = false;
+         }
+         return false;
+      });
       if (!is_safe_to_continue) {
          continue;
       }
@@ -467,16 +458,13 @@ void stockLevel(Integer w_id, Integer d_id, Integer threshold)
    vector<Integer> items;
    items.reserve(100);
    Integer min_ol_o_id = o_id - 20;
-   orderline.scan(
-       {w_id, d_id, min_ol_o_id, minInteger},
-       [&](const orderline_t::Key& key, const orderline_t& rec) {
-          if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id < o_id && key.ol_o_id >= min_ol_o_id) {
-             items.push_back(rec.ol_i_id);
-             return true;
-          }
-          return false;
-       },
-       [&]() { items.clear(); });
+   orderline.scan({w_id, d_id, min_ol_o_id, minInteger}, [&](const orderline_t::Key& key, const orderline_t& rec) {
+      if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id < o_id && key.ol_o_id >= min_ol_o_id) {
+         items.push_back(rec.ol_i_id);
+         return true;
+      }
+      return false;
+   });
    std::sort(items.begin(), items.end());
    std::unique(items.begin(), items.end());
    unsigned count = 0;
@@ -508,27 +496,21 @@ void orderStatusId(Integer w_id, Integer d_id, Integer c_id)
    // -------------------------------------------------------------------------------------
    // latest order id desc
    if (FLAGS_order_wdc_index) {
-      order_wdc.scanDesc(
-          {w_id, d_id, c_id, std::numeric_limits<Integer>::max()},
-          [&](const order_wdc_t::Key& key, const order_wdc_t&) {
-             assert(key.o_w_id == w_id);
-             assert(key.o_d_id == d_id);
-             assert(key.o_c_id == c_id);
-             o_id = key.o_id;
-             return false;
-          },
-          [] {});
+      order_wdc.scanDesc({w_id, d_id, c_id, std::numeric_limits<Integer>::max()}, [&](const order_wdc_t::Key& key, const order_wdc_t&) {
+         assert(key.o_w_id == w_id);
+         assert(key.o_d_id == d_id);
+         assert(key.o_c_id == c_id);
+         o_id = key.o_id;
+         return false;
+      });
    } else {
-      order.scanDesc(
-          {w_id, d_id, std::numeric_limits<Integer>::max()},
-          [&](const order_t::Key& key, const order_t& rec) {
-             if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
-                o_id = key.o_id;
-                return false;
-             }
-             return true;
-          },
-          [&]() {});
+      order.scanDesc({w_id, d_id, std::numeric_limits<Integer>::max()}, [&](const order_t::Key& key, const order_t& rec) {
+         if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
+            o_id = key.o_id;
+            return false;
+         }
+         return true;
+      });
    }
    ensure(o_id > -1);
    // -------------------------------------------------------------------------------------
@@ -546,38 +528,30 @@ void orderStatusId(Integer w_id, Integer d_id, Integer c_id)
    Numeric ol_amount;
    {
       // AAA: expensive
-      orderline.scan(
-          {w_id, d_id, o_id, minInteger},
-          [&](const orderline_t::Key& key, const orderline_t& rec) {
-             if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
-                ol_i_id = rec.ol_i_id;
-                ol_supply_w_id = rec.ol_supply_w_id;
-                ol_delivery_d = rec.ol_delivery_d;
-                ol_quantity = rec.ol_quantity;
-                ol_amount = rec.ol_amount;
-                return true;
-             }
-             return false;
-          },
-          [&]() {
-             // NOTHING
-          });
+      orderline.scan({w_id, d_id, o_id, minInteger}, [&](const orderline_t::Key& key, const orderline_t& rec) {
+         if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
+            ol_i_id = rec.ol_i_id;
+            ol_supply_w_id = rec.ol_supply_w_id;
+            ol_delivery_d = rec.ol_delivery_d;
+            ol_quantity = rec.ol_quantity;
+            ol_amount = rec.ol_amount;
+            return true;
+         }
+         return false;
+      });
    }
 }
 
 void orderStatusName(Integer w_id, Integer d_id, Varchar<16> c_last)
 {
    vector<Integer> ids;
-   customerwdl.scan(
-       {w_id, d_id, c_last, {}},
-       [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
-          if (key.c_w_id == w_id && key.c_d_id == d_id && key.c_last == c_last) {
-             ids.push_back(rec.c_id);
-             return true;
-          }
-          return false;
-       },
-       [&]() { ids.clear(); });
+   customerwdl.scan({w_id, d_id, c_last, {}}, [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
+      if (key.c_w_id == w_id && key.c_d_id == d_id && key.c_last == c_last) {
+         ids.push_back(rec.c_id);
+         return true;
+      }
+      return false;
+   });
    unsigned c_count = ids.size();
    if (c_count == 0)
       return;  // TODO: rollback
@@ -589,43 +563,32 @@ void orderStatusName(Integer w_id, Integer d_id, Varchar<16> c_last)
    Integer o_id = -1;
    // latest order id desc
    if (FLAGS_order_wdc_index) {
-      order_wdc.scanDesc(
-          {w_id, d_id, c_id, std::numeric_limits<Integer>::max()},
-          [&](const order_wdc_t::Key& key, const order_wdc_t&) {
-             assert(key.o_w_id == w_id);
-             assert(key.o_d_id == d_id);
-             assert(key.o_c_id == c_id);
-             o_id = key.o_id;
-             return false;
-          },
-          [] {});
+      order_wdc.scanDesc({w_id, d_id, c_id, std::numeric_limits<Integer>::max()}, [&](const order_wdc_t::Key& key, const order_wdc_t&) {
+         assert(key.o_w_id == w_id);
+         assert(key.o_d_id == d_id);
+         assert(key.o_c_id == c_id);
+         o_id = key.o_id;
+         return false;
+      });
    } else {
-      order.scanDesc(
-          {w_id, d_id, std::numeric_limits<Integer>::max()},
-          [&](const order_t::Key& key, const order_t& rec) {
-             if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
-                o_id = key.o_id;
-                return false;
-             }
-             return true;
-          },
-          [&]() {});
+      order.scanDesc({w_id, d_id, std::numeric_limits<Integer>::max()}, [&](const order_t::Key& key, const order_t& rec) {
+         if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
+            o_id = key.o_id;
+            return false;
+         }
+         return true;
+      });
       ensure(o_id > -1);
    }
    // -------------------------------------------------------------------------------------
    Timestamp ol_delivery_d;
-   orderline.scan(
-       {w_id, d_id, o_id, minInteger},
-       [&](const orderline_t::Key& key, const orderline_t& rec) {
-          if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
-             ol_delivery_d = rec.ol_delivery_d;
-             return true;
-          }
-          return false;
-       },
-       []() {
-          // NOTHING
-       });
+   orderline.scan({w_id, d_id, o_id, minInteger}, [&](const orderline_t::Key& key, const orderline_t& rec) {
+      if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
+         ol_delivery_d = rec.ol_delivery_d;
+         return true;
+      }
+      return false;
+   });
 }
 
 void orderStatusRnd(Integer w_id)
@@ -773,16 +736,13 @@ void paymentByName(Integer w_id,
 
    // Get customer id by name
    vector<Integer> ids;
-   customerwdl.scan(
-       {c_w_id, c_d_id, c_last, {}},
-       [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
-          if (key.c_w_id == c_w_id && key.c_d_id == c_d_id && key.c_last == c_last) {
-             ids.push_back(rec.c_id);
-             return true;
-          }
-          return false;
-       },
-       [&]() { ids.clear(); });
+   customerwdl.scan({c_w_id, c_d_id, c_last, {}}, [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
+      if (key.c_w_id == c_w_id && key.c_d_id == c_d_id && key.c_last == c_last) {
+         ids.push_back(rec.c_id);
+         return true;
+      }
+      return false;
+   });
    unsigned c_count = ids.size();
    if (c_count == 0)
       return;  // TODO: rollback
