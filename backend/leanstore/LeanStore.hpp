@@ -22,7 +22,7 @@ class LeanStore
    // Poor man catalog
    std::unordered_map<string, storage::btree::BTreeLL> btrees_ll;
    // TODO Add map of your data structure here
-   std::unordered_map<string, storage::lsmTree::LSM> lsmBTrees;
+   std::unordered_map<string, storage::lsmTree::LSM> lsmTrees;
    // -------------------------------------------------------------------------------------
    s32 ssd_fd;
    // -------------------------------------------------------------------------------------
@@ -50,7 +50,7 @@ class LeanStore
    storage::btree::BTreeLL& retrieveBTreeLL(string name) { return btrees_ll[name]; }
    // TODO Add your register method for your data structure
    storage::lsmTree::LSM& registerLsmTree(string name);
-   storage::lsmTree::LSM& retrieveLsmTree(string name) { return lsmBTrees[name]; }
+   storage::lsmTree::LSM& retrieveLsmTree(string name) { return lsmTrees[name]; }
    // -------------------------------------------------------------------------------------
    storage::BufferManager& getBufferManager() { return *buffer_manager; }
    cr::WorkerThreadManager& getCRManager() { return *cr_manager; }

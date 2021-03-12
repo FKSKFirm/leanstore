@@ -67,7 +67,9 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       auto exec = [&]() {
          new_root.keepAlive();
          new_root.init(false);
+         // set the upper pointer for the new root, which is the old root node which is now the right/upper child
          new_root->upper = c_x_guard.getBufferFrame();
+         // set the upper pointer of the meta node of the btree to the new root
          p_x_guard->upper = new_root.getBufferFrame();
          // -------------------------------------------------------------------------------------
          new_left_node.init(c_x_guard->is_leaf);

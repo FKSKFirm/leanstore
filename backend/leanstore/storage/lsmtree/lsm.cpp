@@ -136,9 +136,26 @@ unsigned bufferKey(BTreeIterator& a, vector<uint8_t>& keyStorage)
    return pl + kl;
 }
 
-unique_ptr<StaticBTree> mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree)
+unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree)
 {
    auto newTree = make_unique<StaticBTree>();
+
+ //  auto newTreeLL = btree::BTreeLL();
+   newTree->tree.create(this->dt_id, this->meta_node_bf);
+/*
+   //create new btree
+   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&newTree->tree), aTree);
+   auto& bf = buffer_manager->allocatePage();
+   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+   bf.header.keep_in_memory = true;
+   bf.page.dt_id = dtid;
+   guard.unlock();
+   btree.create(dtid, &bf);
+
+
+   newTree->tree.(0);
+*/
+
    ((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->is_leaf = false;
    //((BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper = BTreeNode::makeLeaf();
    //newTree->tree.pageCount++;
@@ -212,6 +229,49 @@ LSM::LSM() : inMemBTree(std::make_unique<btree::BTreeLL>()) {}
 
 LSM::~LSM() {}
 
+// create an LSM Tree with DTID dtid; meta information is in meta_bf
+void LSM::create(DTID dtid, BufferFrame* meta_bf)
+{
+   this->inMemBTree = make_unique<btree::BTreeLL>();
+   this->inMemBTree->create(dtid, meta_bf);
+
+   this->meta_node_bf = meta_bf;
+   this->dt_id = dtid;
+/*
+   // Allocate a first page of the LSM Tree (for the root node)
+   auto root_write_guard_h = HybridPageGuard<LSM>(dtid);
+   // set the page exclusive to alter/init information
+   auto root_write_guard = ExclusivePageGuard<LSM>(std::move(root_write_guard_h));
+   // after exclusive access init the root page of the LSM tree
+   root_write_guard.init();
+
+   // -------------------------------------------------------------------------------------
+   // Set the meta node for this LSM Tree
+   this->meta_node_bf = meta_bf;
+   // Set the datastructure id for the LSM Tree (counting number for all datastructures in LeanStore
+   this->dt_id = dtid;
+
+   // create the in-memory BTree (first of all one root node)
+   // therefore it should be with bf.header.keep_in_memory=true for all Nodes of the in-mem BTree
+   // in merge and mergeAll the level-trees have to be keep_in_memory=false!
+   // datastructure ID for inMemBTree is 0, first level has ID=1, ...
+   auto newBTreeNodeHybrid = HybridPageGuard<btree::BTreeNode>(dt_id, false);
+   auto newRootExclusive = ExclusivePageGuard<btree::BTreeNode>(std::move(newBTreeNodeHybrid));
+
+   DTID inMemBTreeDtid = 0;
+   auto& bf = buffer_manager->allocatePage();
+   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+   bf.header.keep_in_memory = true;
+   bf.page.dt_id = dtid;
+   guard.unlock();
+   btree.create(dtid, &bf);
+
+   // why first HybridPageGuard and then Exclusive; why not directly ExclusivePageGuard?
+   HybridPageGuard<LSM> meta_guard(meta_bf);
+   // exclusive locking for the meta node
+   ExclusivePageGuard meta_page(std::move(meta_guard));*/
+}
+
 void LSM::printLevels()
 {
    uint64_t sum = 0;
@@ -240,11 +300,12 @@ void LSM::mergeAll()
             tiers.emplace_back(move(tiers.back()));
          }
          tiers[i] = make_unique<StaticBTree>();
+         tiers[i]->tree.create(this->dt_id, this->inMemBTree->meta_node_bf);
       }
       limit = limit * factor;
    }
 }
-
+/*
 void LSM::insert(uint8_t* key, unsigned keyLength, uint8_t* payload, unsigned payloadLength)
 {
    inMemBTree->insert(key, keyLength, payload, payloadLength);
@@ -264,10 +325,12 @@ void LSM::insert(uint8_t* key, unsigned keyLength, uint8_t* payload, unsigned pa
          tiers.emplace_back(move(neu));
       // generate new empty inMemory BTree
       inMemBTree = make_unique<btree::BTreeLL>();
+      inMemBTree->create(this->dt_id, this->meta_node_bf);
+
       // if necessary merge further levels
       mergeAll();
    }
-}
+}*/
 /*
 // returns true when the key is found in the inMemory BTree (Root of LSM-Tree)
 bool LSM::lookup(uint8_t* key, unsigned keyLength)
@@ -316,12 +379,10 @@ OP_RESULT LSM::remove(u8* key, u16 key_length)
 {
    return insert(key, key_length,NULL,NULL);
    //TODO: Add DELETE-entry in LSM Tree and remove the entry during merge
-   // is NULL safe for Deletion marker?
+   // is NULL safe as Deletion marker?
 }
 
-OP_RESULT LSM::scanAsc(u8* start_key,
-                          u16 key_length,
-                          function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
+OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
 {
    Slice key(start_key, key_length);
    jumpmuTry()
@@ -346,9 +407,7 @@ OP_RESULT LSM::scanAsc(u8* start_key,
    jumpmuCatch() { ensure(false); }
 }
 
-OP_RESULT LSM::scanDesc(u8* start_key,
-                           u16 key_length,
-                           function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
+OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
 {
    Slice key(start_key, key_length);
    jumpmuTry()
@@ -422,6 +481,8 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
          tiers.emplace_back(move(neu));
       // generate new empty inMemory BTree
       inMemBTree = make_unique<btree::BTreeLL>();
+      inMemBTree->create(this->dt_id, this->meta_node_bf);
+
       // if necessary merge further levels
       mergeAll();
    }
@@ -435,6 +496,7 @@ OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> pay
    if (inMemBTree->lookup(key, keyLength, payload_callback) == OP_RESULT::OK)
       return OP_RESULT::OK;
 
+   // optional: parallel lookup with queue
    for (unsigned i = 0; i < tiers.size(); i++) {
       if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
          return OP_RESULT::OK;
@@ -445,30 +507,32 @@ OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> pay
 
 struct DataTypeRegistry::DTMeta LSM::getMeta()
 {
-   DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
+   DataTypeRegistry::DTMeta lmsTree_meta = {.iterate_children = iterateChildrenSwips,
        .find_parent = findParent,
        .check_space_utilization = checkSpaceUtilization};
-   return btree_meta;
+   return lmsTree_meta;
 }
 
 bool LSM::checkSpaceUtilization(void* btree_object, BufferFrame& bf, OptimisticGuard& o_guard, ParentSwipHandler& parent_handler)
 {
+   // TODO: implement, when xmerge should be used
    return false;
 }
 
-void LSM::iterateChildrenSwips(void*, BufferFrame& bf, std::function<bool(Swip<BufferFrame>&)> callback)
+void LSM::iterateChildrenSwips(void*, BufferFrame& bufferFrame, std::function<bool(Swip<BufferFrame>&)> callback)
 {
-   // Pre: getBufferFrame is read locked
-   auto& c_node = *reinterpret_cast<btree::BTreeNode*>(bf.page.dt);
-   if (c_node.is_leaf) {
+   auto& bTreeNode = *reinterpret_cast<btree::BTreeNode*>(bufferFrame.page.dt);
+   if (bTreeNode.is_leaf) {
       return;
    }
-   for (u16 i = 0; i < c_node.count; i++) {
-      if (!callback(c_node.getChild(i).cast<BufferFrame>())) {
+   // bTreeNode is inner node -> has children
+   for (u16 i = 0; i < bTreeNode.count; i++) {
+      if (!callback(bTreeNode.getChild(i).cast<BufferFrame>())) {
          return;
       }
    }
-   callback(c_node.upper.cast<BufferFrame>());
+   // process last child pointer (upper pointer)
+   callback(bTreeNode.upper.cast<BufferFrame>());
 }
 
 struct ParentSwipHandler LSM::findParent(void* btree_object, BufferFrame& to_find)

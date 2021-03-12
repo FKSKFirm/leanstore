@@ -35,6 +35,8 @@ using PID = u64;
 using LID = u64;   // Log ID
 using TTS = u64;   // Transaction Time Stamp
 using DTID = s64;  // Datastructure ID
+// TODO: How for LSM-Tree? Is DTID=0 one LSM Tree and its BTrees have no ID? OR LSMTree1.BTree1 on level 1 has DTID=1, LSMTree1.BTree2 on level 2 has DTID=x, ...
+// Problem with more than one LSM-Tree (i.e. TPC-C eight datastructure),
 // -------------------------------------------------------------------------------------
 using TINYINT = s8;
 using SMALLINT = s16;

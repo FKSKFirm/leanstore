@@ -35,42 +35,41 @@ struct LSM : public KeyValueInterface {
    // pointer to inMemory BTree (Root of LSM-Tree)
    std::unique_ptr<btree::BTreeLL> inMemBTree;
    std::vector<std::unique_ptr<StaticBTree>> tiers;
+   DTID dt_id;
+   BufferFrame* meta_node_bf;  // kept in memory
 
    LSM();
    ~LSM();
+
+   void create(DTID dtid, BufferFrame* meta_bf);
 
    void printLevels();
 
    // merges
    void mergeAll();
+   unique_ptr<StaticBTree> mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree);
 
-   void insert(uint8_t* key, unsigned keyLength, uint8_t* payload, unsigned payloadLength);
+   //void insert(uint8_t* key, unsigned keyLength, uint8_t* payload, unsigned payloadLength);
 
    // returns true when the key is found in the inMemory BTree (Root of LSM-Tree)
-   bool lookup(uint8_t* key, unsigned keyLength);
-   bool lookupOnlyBloomFilter(uint8_t* key, unsigned int keyLength);
+   //bool lookup(uint8_t* key, unsigned keyLength);
+   //bool lookupOnlyBloomFilter(uint8_t* key, unsigned int keyLength);
 
 
-
-   virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>) override;
-   virtual OP_RESULT remove(u8* key, u16 key_length) override;
-   virtual OP_RESULT scanAsc(u8* start_key,
-                             u16 key_length,
-                             function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;
-   virtual OP_RESULT scanDesc(u8* start_key,
-                              u16 key_length,
-                              function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;
-   virtual u64 countPages() override;
-   virtual u64 countEntries() override;
-   virtual u64 getHeight() override;
-   virtual OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
-   virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
+   OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>) override;
+   OP_RESULT remove(u8* key, u16 key_length) override;
+   OP_RESULT scanAsc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;
+   OP_RESULT scanDesc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;
+   u64 countPages() override;
+   u64 countEntries() override;
+   u64 getHeight() override;
+   OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
+   OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
 
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);
    static DataTypeRegistry::DTMeta getMeta();
-   static void iterateChildrenSwips(void* btree_object, BufferFrame& bf, std::function<bool(Swip<BufferFrame>&)> callback);
+   static void iterateChildrenSwips(void* btree_object, BufferFrame& bufferFrame, std::function<bool(Swip<BufferFrame>&)> callback);
    static bool checkSpaceUtilization(void* btree_object, BufferFrame&, OptimisticGuard&, ParentSwipHandler&);
-
 };
 }
 }

@@ -60,7 +60,6 @@ int main(int argc, char** argv)
    auto& crm = db.getCRManager();
    // -------------------------------------------------------------------------------------
    warehouseCount = FLAGS_tpcc_warehouse_count;
-   crm.scheduleJobSync(0, [&]() {
       warehouse = LeanStoreAdapter<warehouse_t>(db, "warehouse");
       district = LeanStoreAdapter<district_t>(db, "district");
       customer = LeanStoreAdapter<customer_t>(db, "customer");
@@ -72,7 +71,6 @@ int main(int argc, char** argv)
       orderline = LeanStoreAdapter<orderline_t>(db, "orderline");
       item = LeanStoreAdapter<item_t>(db, "item");
       stock = LeanStoreAdapter<stock_t>(db, "stock");
-   });
    // -------------------------------------------------------------------------------------
    db.registerConfigEntry("tpcc_warehouse_count", FLAGS_tpcc_warehouse_count);
    db.registerConfigEntry("tpcc_warehouse_affinity", FLAGS_tpcc_warehouse_affinity);
