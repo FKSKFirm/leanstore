@@ -6,6 +6,7 @@
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/sync-primitives/PageGuard.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
+#include "leanstore/storage/DataStructureIdentifier.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -18,7 +19,7 @@ namespace storage
 namespace btree
 {
 // -------------------------------------------------------------------------------------
-class BTreeLL : public KeyValueInterface, public BTreeGeneric
+class BTreeLL : public KeyValueInterface, public BTreeGeneric, public DataStructureIdentifier
 {
   public:
    virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;

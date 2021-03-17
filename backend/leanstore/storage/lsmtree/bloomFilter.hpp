@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <leanstore/storage/DataStructureIdentifier.hpp>
 #include <vector>
 #include "MurmurHash3.h"
 
@@ -26,7 +27,7 @@ namespace lsmTree
 // BloomFilter for performance lookups in BTrees, LSM-Trees...
 // Fixed size from the beginning, can not resize
 // Therefore fixed Tree structure
-struct BloomFilter {
+struct BloomFilter : public DataStructureIdentifier {
    static uint64_t hashKey(uint8_t* key, unsigned len)
    {
       uint64_t out[2];

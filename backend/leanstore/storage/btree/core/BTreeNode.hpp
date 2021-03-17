@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cstring>
 #include <fstream>
+#include <leanstore/storage/DataStructureIdentifier.hpp>
 #include <string>
 // -------------------------------------------------------------------------------------
 using namespace std;
@@ -42,7 +43,7 @@ static inline u16 swap(u16 x)
    return __builtin_bswap16(x);
 }
 // -------------------------------------------------------------------------------------
-struct BTreeNodeHeader {
+struct BTreeNodeHeader : public DataStructureIdentifier {
    static const u16 underFullSize = EFFECTIVE_PAGE_SIZE * 0.6;
    static const u16 K_WAY_MERGE_THRESHOLD = EFFECTIVE_PAGE_SIZE * 0.45;
 
