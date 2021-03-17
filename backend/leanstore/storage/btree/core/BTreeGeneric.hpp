@@ -112,6 +112,7 @@ class BTreeGeneric
    double averageSpaceUsage();
    u32 bytesFree();
    void printInfos(uint64_t totalSize);
+   void create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifier* dsi);
 };
 // -------------------------------------------------------------------------------------
 }  // namespace btree

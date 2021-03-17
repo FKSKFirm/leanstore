@@ -32,6 +32,21 @@ void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf)
    meta_page->upper = root_write_guard.getBufferFrame();  // HACK: use upper of meta node as a swip to the storage root
 }
 // -------------------------------------------------------------------------------------
+void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifier* dsi)
+{
+   auto root_write_guard_h = HybridPageGuard<BTreeNode>(dtid);
+   auto root_write_guard = ExclusivePageGuard<BTreeNode>(std::move(root_write_guard_h));
+   root_write_guard.init(true);
+   // -------------------------------------------------------------------------------------
+   this->meta_node_bf = meta_bf;
+   this->dt_id = dtid;
+   ((BTreeNode*)(root_write_guard.getBufferFrame()->page.dt))->type = dsi->type;
+   ((BTreeNode*)(root_write_guard.getBufferFrame()->page.dt))->level = dsi->level;
+   HybridPageGuard<BTreeNode> meta_guard(meta_bf);
+   ExclusivePageGuard meta_page(std::move(meta_guard));
+   meta_page->upper = root_write_guard.getBufferFrame();  // HACK: use upper of meta node as a swip to the storage root
+}
+// -------------------------------------------------------------------------------------
 void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
 {
    auto parent_handler = findParent(*this, to_split);
@@ -71,8 +86,16 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          new_root->upper = c_x_guard.getBufferFrame();
          // set the upper pointer of the meta node of the btree to the new root
          p_x_guard->upper = new_root.getBufferFrame();
+
+         new_root->type = LSM_TYPE::InMemoryBTree; // TODO check if it is InMemoryTree
+         new_root->level = 0;
+
          // -------------------------------------------------------------------------------------
          new_left_node.init(c_x_guard->is_leaf);
+
+         new_left_node->type = LSM_TYPE::InMemoryBTree; // TODO check if it is InMemoryTree
+         new_left_node->level = 0;
+
          c_x_guard->getSep(sep_key, sep_info);
          // -------------------------------------------------------------------------------------
          c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
@@ -97,6 +120,10 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          // -------------------------------------------------------------------------------------
          auto exec = [&]() {
             new_left_node.init(c_x_guard->is_leaf);
+
+            new_left_node->type = LSM_TYPE::InMemoryBTree; // TODO check if it is really a InMemoryTree
+            new_left_node->level = 0;
+
             c_x_guard->getSep(sep_key, sep_info);
             c_x_guard->split(p_x_guard, new_left_node, sep_info.slot, sep_key, sep_info.length);
          };

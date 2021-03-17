@@ -109,7 +109,7 @@ unsigned commonPrefix(uint8_t* a, unsigned lenA, uint8_t* b, unsigned lenB)
 
 void buildNode(vector<KeyEntry>& entries, vector<uint8_t>& keyStorage, btree::BTreeLL& btree)
 {
-   btree::BTreeNode node = btree::BTreeNode(true);
+   btree::BTreeNode node = btree::BTreeNode(true, (DataStructureIdentifier*)&btree);
    node.prefix_length = commonPrefix(entries.back().keyOffset + keyStorage.data(), entries.back().len, entries.front().keyOffset + keyStorage.data(),
                                       entries.front().len);
    for (unsigned i = 0; i < entries.size(); i++)
@@ -141,7 +141,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
    auto newTree = make_unique<StaticBTree>();
 
  //  auto newTreeLL = btree::BTreeLL();
-   newTree->tree.create(this->dt_id, this->meta_node_bf);
+
 /*
    //create new btree
    DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&newTree->tree), aTree);
@@ -156,7 +156,29 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
    newTree->tree.(0);
 */
 
+
+   // a new merged tree is always in disk, never a In-memory tree
+   newTree->tree.type = LSM_TYPE::BTree;
+   newTree->filter.type = LSM_TYPE::BloomFilter;
+
+   //dsi needed for root bTreeNode
+   DataStructureIdentifier dsi = DataStructureIdentifier();
+   dsi.type = LSM_TYPE::BTree;
+
+   if (bTree == NULL) { // we create the first level on disk, so the new merged tree has level 0 on disk
+      newTree->tree.level = 0;
+      newTree->filter.level = 0;
+      dsi.level = 0;
+   }
+   else { // aTree is to large for level i, so its merged into bTree which reside at level i+1
+      newTree->tree.level = bTree->level;
+      newTree->filter.level = bTree->level;
+      dsi.level = bTree->level;
+   }
+
+   newTree->tree.create(this->dt_id, this->meta_node_bf, &dsi);
    ((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->is_leaf = false;
+
    //((BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper = BTreeNode::makeLeaf();
    //newTree->tree.pageCount++;
    uint64_t entryCount = 0;
@@ -225,7 +247,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
       }
    }
 }
-LSM::LSM() : inMemBTree(std::make_unique<btree::BTreeLL>()) {}
+LSM::LSM() : inMemBTree(std::make_unique<btree::BTreeLL>()) {inMemBTree->type=LSM_TYPE::InMemoryBTree; inMemBTree->level = 0;}
 
 LSM::~LSM() {}
 
@@ -245,7 +267,15 @@ void LSM::create(DTID dtid, BufferFrame* meta_bf)
 
    // create the inMemory BTree
    // TODO use of dtid for more than one BTree is valid? dtid = dtid of LSM tree
-   this->inMemBTree->create(dtid, &newMetaBufferPage);
+
+   DataStructureIdentifier dsi = DataStructureIdentifier();
+   dsi.type = LSM_TYPE::InMemoryBTree;
+   dsi.level = 0;
+
+   this->inMemBTree->create(dtid, &newMetaBufferPage, &dsi);
+
+   this->inMemBTree->type=LSM_TYPE::InMemoryBTree;
+   this->inMemBTree->level = 0;
 
 /*
    // Allocate a first page of the LSM Tree (for the root node)
@@ -305,12 +335,21 @@ void LSM::mergeAll()
             // merge with next level
             StaticBTree& next = *tiers[i + 1];
             tiers[i + 1] = mergeTrees((btree::BTreeNode*)curr.tree.meta_node_bf->page.dt, (btree::BTreeNode*)next.tree.meta_node_bf->page.dt);
+
+            //nicht mehr nötig, da bereits in mergeTrees gesetzt
+            /*
             tiers[i+1]->tree.type = LSM_TYPE::BTree;
             tiers[i+1]->tree.level = i+1;
             tiers[i+1]->filter.type = LSM_TYPE::BloomFilter;
             tiers[i+1]->filter.level = i+1;
+             */
+            ensure(tiers[i+1]->tree.type == LSM_TYPE::BTree);
+            ensure(tiers[i+1]->filter.type == LSM_TYPE::BloomFilter);
+            ensure(tiers[i+1]->tree.level == i+1);
+            ensure(tiers[i+1]->filter.level == i+1);
          } else {
             // new level
+            // TODO set every BTreeNode->level to the new level i+1
             tiers.emplace_back(move(tiers.back()));
             tiers[i+1]->tree.type = LSM_TYPE::BTree;
             tiers[i+1]->tree.level = i+1;
@@ -514,10 +553,17 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
       else // only In-Memory exists yet
          tiers.emplace_back(move(neu));
 
+      // nicht mehr nötig, da bereits bei mergeTrees gesetzt worden
+      /*
       tiers[0]->tree.type = LSM_TYPE::BTree;
       tiers[0]->tree.level = 0;
       tiers[0]->filter.type = LSM_TYPE::BloomFilter;
       tiers[0]->filter.level = 0;
+       */
+      ensure(tiers[0]->tree.type == LSM_TYPE::BTree);
+      ensure(tiers[0]->filter.type == LSM_TYPE::BloomFilter);
+      ensure(tiers[0]->tree.level == 0);
+      ensure(tiers[0]->filter.level == 0);
 
       // generate new empty inMemory BTree
       inMemBTree = make_unique<btree::BTreeLL>();
@@ -531,7 +577,7 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 
       //create in-memory btree
       inMemBTree->create(this->dt_id, &newMetaBufferPage);
-      inMemBTree->type = LSM_TYPE::BTree;
+      inMemBTree->type = LSM_TYPE::InMemoryBTree;
       inMemBTree->level = 0;
 
       // if necessary merge further levels
@@ -594,18 +640,18 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
    u64 level = dsl->level;
    LSM* tree = static_cast<LSM*>(reinterpret_cast<LSM*>(lsm_object));
 
-   if (level==0) { // in-memory
+   if (dsl->type == LSM_TYPE::InMemoryBTree) { // in-memory
       btree::BTreeLL* btreeRootLSM = tree->inMemBTree.get();
       return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeRootLSM)), to_find);
    }
    else { // on disk on level i
       // check which type bufferFrame is
       if (dsl->type == LSM_TYPE::BTree) { //BTree
-         btree::BTreeLL* btreeLevel = &(tree->tiers[level-1]->tree);
+         btree::BTreeLL* btreeLevel = &(tree->tiers[level]->tree);
          return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeLevel)), to_find);
       }
       else { // BloomFilter
-         BloomFilter* bf = &(tree->tiers[level-1]->filter);
+         BloomFilter* bf = &(tree->tiers[level]->filter);
          // TODO implement BloomFilter correct (findParent, etc)
          //return BloomFilter.findParent(*static_cast<BloomFilter*>(reinterpret_cast<BloomFilter*>(bf)), to_find);
       }

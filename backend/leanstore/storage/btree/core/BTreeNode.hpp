@@ -72,6 +72,7 @@ struct BTreeNodeHeader : public DataStructureIdentifier {
    u32 hint[hint_count];
 
    BTreeNodeHeader(bool is_leaf) : is_leaf(is_leaf) {}
+   BTreeNodeHeader(bool is_leaf, DataStructureIdentifier* dsi) : is_leaf(is_leaf) {this->type=dsi->type; this->level=dsi->level;}
    ~BTreeNodeHeader() {}
 
    inline u8* ptr() { return reinterpret_cast<u8*>(this); }
@@ -99,6 +100,7 @@ struct BTreeNode : public BTreeNodeHeader {
    u8 padding[left_space_to_waste];
 
    BTreeNode(bool is_leaf) : BTreeNodeHeader(is_leaf) {}
+   BTreeNode(bool is_leaf, DataStructureIdentifier* dsi) : BTreeNodeHeader(is_leaf, dsi) {}
 
    u16 freeSpace() { return data_offset - (reinterpret_cast<u8*>(slot + count) - ptr()); }
    u16 freeSpaceAfterCompaction() { return EFFECTIVE_PAGE_SIZE - (reinterpret_cast<u8*>(slot + count) - ptr()) - space_used; }
