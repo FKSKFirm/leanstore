@@ -18,6 +18,13 @@ struct KeyEntry {
    unsigned len;
 };
 
+struct KeyValueEntry {
+   unsigned keyOffset;
+   unsigned keyLen;
+   unsigned payloadOffset;
+   unsigned payloadLen;
+};
+
 // Compare two string
 static int cmpKeys(uint8_t* a, uint8_t* b, unsigned aLength, unsigned bLength)
 {
@@ -45,6 +52,8 @@ struct BTreeIterator {
    bool done() { return stack.empty(); }
    uint8_t* getKey() { return stack.back().first->getKey(stack.back().second); }
    unsigned getKeyLen() { return stack.back().first->slot[stack.back().second].key_len; }
+   uint8_t* getPayload() { return stack.back().first->getPayload(stack.back().second); }
+   unsigned getPayloadLen() { return stack.back().first->getPayloadLength(stack.back().second); }
 
    // returns the last BTreeNode in the stack
    btree::BTreeNode& operator*() const { return *stack.back().first; }
@@ -90,10 +99,10 @@ struct BTreeIterator {
    }
 };
 
-unsigned spaceNeeded(unsigned prefix, unsigned totalKeySize, unsigned count)
+unsigned spaceNeeded(unsigned prefix, unsigned totalKeySize, unsigned totalPayloadSize, unsigned count)
 {
    // spaceNeeded = BTreeNodeHeader + slots * count + totalKeyAndPayloadSize + lowerFenxe + upperFence
-   return sizeof(btree::BTreeNodeHeader) + (sizeof(btree::BTreeNode::Slot) * count) + totalKeySize - (count * prefix) + prefix;
+   return sizeof(btree::BTreeNodeHeader) + (sizeof(btree::BTreeNode::Slot) * count) + totalKeySize - (count * prefix) + prefix + totalPayloadSize;
 }
 
 // returns the number of same letters
@@ -107,13 +116,15 @@ unsigned commonPrefix(uint8_t* a, unsigned lenA, uint8_t* b, unsigned lenB)
    return i;
 }
 
-void buildNode(vector<KeyEntry>& entries, vector<uint8_t>& keyStorage, btree::BTreeLL& btree)
+void buildNode(vector<KeyValueEntry>& entries, vector<uint8_t>& keyStorage, vector<uint8_t>& payloadStorage, btree::BTreeLL& btree)
 {
    btree::BTreeNode node = btree::BTreeNode(true, (DataStructureIdentifier*)&btree);
-   node.prefix_length = commonPrefix(entries.back().keyOffset + keyStorage.data(), entries.back().len, entries.front().keyOffset + keyStorage.data(),
-                                      entries.front().len);
+   node.prefix_length = commonPrefix(entries.back().keyOffset + keyStorage.data(), entries.back().keyLen,
+                                     entries.front().keyOffset + keyStorage.data(), entries.front().keyLen);
    for (unsigned i = 0; i < entries.size(); i++)
-      node.storeKeyValue(i, entries[i].keyOffset + keyStorage.data(), entries[i].len, nullptr, 0);
+      node.storeKeyValue(i,
+                         entries[i].keyOffset + keyStorage.data(), entries[i].keyLen,
+                         entries[i].payloadOffset + payloadStorage.data(), entries[i].payloadLen);
    node.count = entries.size();
    node.insertFence(node.lower_fence, entries.back().keyOffset + keyStorage.data(),
                      node.prefix_length);  // XXX: could put prefix before last key and set upperfence
@@ -134,6 +145,34 @@ unsigned bufferKey(BTreeIterator& a, vector<uint8_t>& keyStorage)
    keyStorage.insert(keyStorage.end(), a.getKey(), a.getKey() + kl);
 
    return pl + kl;
+}
+
+// adds the payload to payloadStorage and returns the length of the payload
+unsigned bufferPayload(BTreeIterator& a, vector<uint8_t>& payloadStorage)
+{
+   // insert the key in the keyStorage
+   unsigned pll = a.getPayloadLen();
+   payloadStorage.insert(payloadStorage.end(), a.getPayload(), a.getPayload() + pll);
+
+   return pll;
+}
+
+// adds the prefix, the key and the payload to keyStorage and returns the length of prefix, key and payload
+unsigned bufferKeyValue(BTreeIterator& a, vector<uint8_t>& keyStorage, vector<uint8_t>& payloadStorage)
+{
+   // insert the Prefix at the end of keyStorage
+   unsigned pl = a->prefix_length;
+   keyStorage.insert(keyStorage.end(), a->getLowerFenceKey(), a->getLowerFenceKey() + pl);
+
+   // insert the key in the keyStorage
+   unsigned kl = a.getKeyLen();
+   keyStorage.insert(keyStorage.end(), a.getKey(), a.getKey() + kl);
+
+   // insert the key in the keyStorage
+   unsigned pll = a.getPayloadLen();
+   payloadStorage.insert(payloadStorage.end(), a.getPayload(), a.getPayload() + pll);
+
+   return pl + kl + pll;
 }
 
 unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree)
@@ -184,11 +223,15 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
    uint64_t entryCount = 0;
 
    unsigned totalKeySize = 0;
-   // saves the keyOffset and the length of the key in the keyStorage
-   vector<KeyEntry> entries;
+   unsigned totalPayloadSize = 0;
+   // saves the keyOffset and the length of the key and the payloadOffset and the length of the payload
+   vector<KeyValueEntry> kvEntries;
    // saves the complete keys in one big list
    vector<uint8_t> keyStorage;
+   // saves the payload in one big list
+   vector<uint8_t> payloadStorage;
    keyStorage.reserve(btree::btreePageSize * 2);
+   payloadStorage.reserve(btree::btreePageSize * 2);
 
    BTreeIterator a(aTree);
    BTreeIterator b(bTree);
@@ -204,8 +247,8 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
       if (a.done()) {
          if (b.done()) {
             // all entries processed, create last page and exit
-            entryCount += entries.size();
-            buildNode(entries, keyStorage, newTree->tree);
+            entryCount += kvEntries.size();
+            buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);
 
             // create BloomFilter
             newTree->filter.init(entryCount);
@@ -224,26 +267,34 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
          bufferKey(b, keyB);
          it = cmpKeys(keyA.data(), keyB.data(), keyA.size(), keyB.size()) < 0 ? &a : &b;
       }
-      unsigned offset = keyStorage.end() - keyStorage.begin();
-      unsigned len = bufferKey(*it, keyStorage);
-      entries.push_back({offset, len});
-      uint8_t* key = keyStorage.data() + keyStorage.size() - len;
-      hashes.push_back(BloomFilter::hashKey(key, len));
+      unsigned keyOffset = keyStorage.end() - keyStorage.begin();
+      unsigned keyLen = bufferKey(*it, keyStorage);
+      unsigned payloadOffset = payloadStorage.end() - payloadStorage.begin();
+      unsigned payloadLen = bufferPayload(*it, payloadStorage);
 
-      unsigned prefix = commonPrefix(entries.front().keyOffset + keyStorage.data(), entries.front().len, key, len);
-      if (spaceNeeded(prefix, totalKeySize + len, entries.size()) >= btree::btreePageSize) {
+      kvEntries.push_back({keyOffset, keyLen, payloadOffset, payloadLen});
+
+      uint8_t* key = keyStorage.data() + keyStorage.size() - keyLen;
+      //uint8_t* payload = payloadStorage.data() + payloadStorage.size() - payloadLen;
+      hashes.push_back(BloomFilter::hashKey(key, keyLen));
+
+      unsigned prefix = commonPrefix(kvEntries.front().keyOffset + keyStorage.data(), kvEntries.front().keyLen, key, keyLen);
+      if (spaceNeeded(prefix, totalKeySize + keyLen, totalPayloadSize + payloadLen, kvEntries.size()) >= btree::btreePageSize) {
          // key does not fit, create new page
-         entries.pop_back();
-         entryCount += entries.size();
-         buildNode(entries, keyStorage, newTree->tree);  // could pick shorter separator here
-         entries.clear();
+         kvEntries.pop_back();
+         entryCount += kvEntries.size();
+         buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);  // could pick shorter separator here
+         kvEntries.clear();
          keyStorage.clear();
+         payloadStorage.clear();
          totalKeySize = 0;
+         totalPayloadSize = 0;
       } else {
          // key fits, buffer it
          // go to next entry in the tree
          ++(*it);
-         totalKeySize += len;
+         totalKeySize += keyLen;
+         totalPayloadSize += payloadLen;
       }
    }
 }
@@ -537,7 +588,8 @@ u64 LSM::getHeight()
 OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 {
    inMemBTree->insert(key, keyLength, payload, payloadLength);
-   if (inMemBTree->countPages() >= baseLimit) {
+   u64 pageCount = inMemBTree->countPages();
+   if (pageCount >= baseLimit) {
       // merge inMemory-BTree with first level BTree of LSM Tree
 
       // init pageGuard to the metaNode
