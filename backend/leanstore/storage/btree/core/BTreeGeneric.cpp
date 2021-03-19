@@ -69,8 +69,8 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
    }
    u8 sep_key[sep_info.length];
    if (isMetaNode(p_guard)) {  // root split
-      auto p_x_guard = ExclusivePageGuard(std::move(p_guard));
-      auto c_x_guard = ExclusivePageGuard(std::move(c_guard));
+      auto p_x_guard = ExclusivePageGuard(std::move(p_guard)); // exclusive guard for metaNode
+      auto c_x_guard = ExclusivePageGuard(std::move(c_guard)); // exclusive guard for old root node
       assert(height == 1 || !c_x_guard->is_leaf);
       // -------------------------------------------------------------------------------------
       // create new root
@@ -429,10 +429,10 @@ struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFra
 {
    auto& c_node = *reinterpret_cast<BTreeNode*>(to_find.page.dt);
    // -------------------------------------------------------------------------------------
-   HybridPageGuard<BTreeNode> p_guard(btree.meta_node_bf);
+   HybridPageGuard<BTreeNode> p_guard(btree.meta_node_bf); // lock metaNode
    u16 level = 0;
    // -------------------------------------------------------------------------------------
-   Swip<BTreeNode>* c_swip = &p_guard->upper;
+   Swip<BTreeNode>* c_swip = &p_guard->upper; // get swip for rootNode
    if (btree.dt_id != to_find.page.dt_id || (!p_guard->upper.isHOT())) {
       jumpmu::jump();
    }
@@ -573,6 +573,62 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
         << " rootCnt:" << r_guard->count << " bytesFree:" << bytesFree() << endl;
 }
 // -------------------------------------------------------------------------------------
+
+
+
+void BTreeGeneric::insertLeafNode(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
+
+   // lock the meta node
+   HybridPageGuard<BTreeNode> metaNode_guard(meta_node_bf);
+   //lock the root node
+   HybridPageGuard root_guard(metaNode_guard, metaNode_guard->upper);
+
+   //Swip<BTreeNode*> rootNode = metaNode_guard->upper;
+
+   insertLeafSorted(metaNode_guard, root_guard, key, keyLength, leaf);
+}
+
+
+void BTreeGeneric::insertLeafSorted(HybridPageGuard<BTreeNode>& parent_guard,
+                                    HybridPageGuard<BTreeNode>& current_node,
+                                    uint8_t* key, unsigned keyLength,
+                                    ExclusivePageGuard<BTreeNode>& leaf) {
+
+   //BTreeNode metaNode = ((BTreeNode*)parent_guard.bufferFrame->page.dt);
+   //BTreeNode rootNode = ((BTreeNode*)current_node.bufferFrame->page.dt);
+   //BTreeNode emptyBTreeNode = ((BTreeNode*)rootNode.upper.bf->page.dt);
+
+   if (current_node->is_leaf) {
+
+      unsigned pageCountBefore = countPages();
+      if (parent_guard->canInsert(keyLength, sizeof(BTreeNode*))) {
+         auto swip = leaf.swip();
+         parent_guard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
+         //assert(countPages() == pageCountBefore + 1);
+         return;
+      }
+      // no more space, need to split
+      //ExclusivePageGuard parent_x_guard(std::move(parent_guard));
+      parent_guard.unlock();
+      trySplit(*parent_guard.bufferFrame);
+
+      // retry insert
+      insertLeafNode(key, keyLength, leaf);
+      return;
+   }
+
+   // inner node
+   Swip<BTreeNode>& childToFollow = current_node->lookupInner(key,keyLength);
+   // TODO: childGuard(parent_guard, childToFollow) or:
+   HybridPageGuard<BTreeNode> childGuard(current_node, childToFollow);
+   childGuard.recheck();
+
+   insertLeafSorted(current_node, childGuard, key, keyLength, leaf);
+
+}
+
+
+
 }  // namespace btree
 }  // namespace storage
 }  // namespace leanstore

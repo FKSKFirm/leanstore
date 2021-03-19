@@ -118,19 +118,25 @@ unsigned commonPrefix(uint8_t* a, unsigned lenA, uint8_t* b, unsigned lenB)
 
 void buildNode(vector<KeyValueEntry>& entries, vector<uint8_t>& keyStorage, vector<uint8_t>& payloadStorage, btree::BTreeLL& btree)
 {
-   btree::BTreeNode node = btree::BTreeNode(true, (DataStructureIdentifier*)&btree);
-   node.prefix_length = commonPrefix(entries.back().keyOffset + keyStorage.data(), entries.back().keyLen,
+   auto new_node_h = HybridPageGuard<btree::BTreeNode>(btree.dt_id);
+   auto new_node = ExclusivePageGuard<btree::BTreeNode>(std::move(new_node_h));
+   new_node.init(true);
+
+   new_node->type = LSM_TYPE::BTree;
+   new_node->level = btree.level;
+
+   new_node->prefix_length = commonPrefix(entries.back().keyOffset + keyStorage.data(), entries.back().keyLen,
                                      entries.front().keyOffset + keyStorage.data(), entries.front().keyLen);
    for (unsigned i = 0; i < entries.size(); i++)
-      node.storeKeyValue(i,
+      new_node->storeKeyValue(i,
                          entries[i].keyOffset + keyStorage.data(), entries[i].keyLen,
                          entries[i].payloadOffset + payloadStorage.data(), entries[i].payloadLen);
-   node.count = entries.size();
-   node.insertFence(node.lower_fence, entries.back().keyOffset + keyStorage.data(),
-                     node.prefix_length);  // XXX: could put prefix before last key and set upperfence
-   node.makeHint();
-   // keyValueDataStore.insert(entries.back().keyOffset + keyStorage.data(), entries.back().len,
-   //btree.insertLeafSorted(entries.back().keyOffset + keyStorage.data(), entries.back().len, node);
+   new_node->count = entries.size();
+   new_node->insertFence(new_node->lower_fence, entries.back().keyOffset + keyStorage.data(),
+                         new_node->prefix_length);  // XXX: could put prefix before last key and set upperfence
+   new_node->makeHint();
+
+   btree.insertLeafNode(entries.back().keyOffset + keyStorage.data(), entries.back().keyLen, new_node);
 }
 
 // adds the prefix and the key to keyStorage and returns the length of prefix and key
@@ -175,6 +181,19 @@ unsigned bufferKeyValue(BTreeIterator& a, vector<uint8_t>& keyStorage, vector<ui
    return pl + kl + pll;
 }
 
+void LSM::createLeafNodeForSortedInsert(btree::BTreeNode* rootNode, DataStructureIdentifier* dsi) {
+
+   // create empty leaf node linked to upper pointer to get insertLeafSorted working
+   auto new_upper_node_h = HybridPageGuard<btree::BTreeNode>(dt_id);
+   // upgrade to exclusive lock
+   auto new_upper_node = ExclusivePageGuard<btree::BTreeNode>(std::move(new_upper_node_h));
+   new_upper_node.init(true);
+   new_upper_node->type = LSM_TYPE::BTree;
+   new_upper_node->level = dsi->level;
+   // connect the upper pointer of the empty root node to the new bufferFrame
+   rootNode->upper = new_upper_node.getBufferFrame();
+}
+
 unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree)
 {
    auto newTree = make_unique<StaticBTree>();
@@ -216,9 +235,22 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
    }
 
    newTree->tree.create(this->dt_id, this->meta_node_bf, &dsi);
-   ((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->is_leaf = false;
+   btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
+   btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
+   rootNode->is_leaf = false;
 
-   //((BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper = BTreeNode::makeLeaf();
+   // create new metaPage for the In-memory BTree
+   /*
+   auto& newMetaBufferPage = BMC::global_bf->allocatePage();
+   Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
+   newMetaBufferPage.header.keep_in_memory = true;
+   newMetaBufferPage.page.dt_id = dtid;
+   guard.unlock();
+   */
+
+   createLeafNodeForSortedInsert(rootNode, &dsi);
+
+
    //newTree->tree.pageCount++;
    uint64_t entryCount = 0;
 
@@ -597,7 +629,7 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
       // p_guard->upper is the root node, rootPageGuard.bufferFrame is set to the root node
       HybridPageGuard<btree::BTreeNode> rootPageGuard = HybridPageGuard<btree::BTreeNode>(p_guard, p_guard->upper);
 
-      btree::BTreeNode* old = tiers.size() ? (btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt : nullptr;
+      btree::BTreeNode* old = tiers.size() ? (btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt : nullptr;
       unique_ptr<StaticBTree> neu = mergeTrees((btree::BTreeNode*)rootPageGuard.bufferFrame->page.dt, old);
 
       if (tiers.size()) // some levels are already there

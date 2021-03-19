@@ -70,6 +70,7 @@ struct LSM : public KeyValueInterface {
    static DataTypeRegistry::DTMeta getMeta();
    static void iterateChildrenSwips(void* btree_object, BufferFrame& bufferFrame, std::function<bool(Swip<BufferFrame>&)> callback);
    static bool checkSpaceUtilization(void* btree_object, BufferFrame&, OptimisticGuard&, ParentSwipHandler&);
+   void createLeafNodeForSortedInsert(btree::BTreeNode* aTree, DataStructureIdentifier* pIdentifier);
 };
 }
 }
