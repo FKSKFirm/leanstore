@@ -856,3 +856,28 @@ int tx(Integer w_id)
    newOrderRnd(w_id);
    return 4;
 }
+
+int test_tx(Integer w_id)
+{
+   Integer idFromRecord = 0;
+   Varchar<100> textFromRecord;
+
+
+   if (urand(1, 100) <= 40) {
+      test.lookup1({w_id}, [&](const test_t& rec) {
+        idFromRecord = rec.id;
+        textFromRecord = rec.t_text;
+      });
+   } else {
+      vector<Integer> ids;
+      test.scan({w_id}, [&](const test_t::Key& key, const test_t& rec) {
+        if (key.w_id == w_id) {
+           ids.push_back(rec.id);
+           return true;
+        }
+        return false;
+      });
+      unsigned c_count = ids.size();
+   }
+   return 0;
+}

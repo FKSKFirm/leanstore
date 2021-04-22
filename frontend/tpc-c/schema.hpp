@@ -1,3 +1,31 @@
+/* ***************** Own Test begin ************************** */
+struct test_t {
+   static constexpr int id = 0;
+   struct Key {
+      static constexpr int id = 0;
+      Integer w_id;
+   };
+   Varchar<100> t_text;
+   // -------------------------------------------------------------------------------------
+   template <class T>
+   static unsigned foldRecord(uint8_t* out, const T& record)
+   {
+      unsigned pos = 0;
+      pos += fold(out + pos, record.w_id);
+      return pos;
+   }
+   template <class T>
+   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   {
+      unsigned pos = 0;
+      pos += unfold(in + pos, record.w_id);
+      return pos;
+   }
+   static constexpr unsigned maxFoldLength() { return 0 + sizeof(Key::w_id); };
+};
+
+/* ***************** Own Test end ************************** */
+
 struct warehouse_t {
    static constexpr int id = 0;
    struct Key {

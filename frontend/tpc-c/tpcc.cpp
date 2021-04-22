@@ -30,6 +30,7 @@ DEFINE_bool(tpcc_remove, true, "");
 using namespace std;
 using namespace leanstore;
 // -------------------------------------------------------------------------------------
+LeanStoreAdapter<test_t> test;
 LeanStoreAdapter<warehouse_t> warehouse;
 LeanStoreAdapter<district_t> district;
 LeanStoreAdapter<customer_t> customer;
@@ -58,6 +59,58 @@ int main(int argc, char** argv)
    // -------------------------------------------------------------------------------------
    LeanStore db;
    auto& crm = db.getCRManager();
+
+   /* ********************* Own Test begin ****************/
+   test = LeanStoreAdapter<test_t>(db, "onw_test");
+
+   uint64_t zaehler = ITEMS_NO;
+   for (uint64_t count = 0; count < 100000000000; count++) {
+      // Load data
+      for (Integer i = zaehler * count; i < zaehler * (count+1); i++) {
+         Varchar<100> i_data = randomastring<100>(25, 100);
+         if (rnd(10) == 0) {
+            i_data.length = rnd(i_data.length - 8);
+            i_data = i_data || Varchar<10>("ORIGINAL");
+         }
+         cout << "Test Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
+         test.insert({i}, {randomastring<100>(14, 100)});
+         //cout << "Insert done" << endl;
+
+         //cout << "Test Select: " << endl;
+         test_tx(i);
+         //cout << "Test Select Done." << endl;
+      }
+      // -------------------------------------------------------------------------------------
+      double gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
+      cout << "data loaded - consumed space in GiB = " << gib << endl;
+      cout << "Test pages = " << test.keyValueDataStore->countPages() << endl;
+      // -------------------------------------------------------------------------------------
+      // read data
+      // -------------------------------------------------------------------------------------
+
+      for (Integer i = zaehler * count; i < zaehler * (count+1); i++) {
+         volatile u64 tx_acc = 0;
+         jumpmuTry()
+         {
+            u32 test_id = urand(1, zaehler-1);
+            test_tx(test_id);
+            if (FLAGS_tpcc_abort_pct && urand(0, 100) <= FLAGS_tpcc_abort_pct) {
+            } else {
+            }
+            WorkerCounters::myCounters().tx++;
+            tx_acc++;
+         }
+         jumpmuCatch() { WorkerCounters::myCounters().tx_abort++; }
+      }
+      // -------------------------------------------------------------------------------------
+      gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
+      cout << endl << "consumed space in GiB = " << gib << endl;
+      // -------------------------------------------------------------------------------------
+   }
+
+
+   /* ********************* Own Test end ******************/
+
    // -------------------------------------------------------------------------------------
    warehouseCount = FLAGS_tpcc_warehouse_count;
       warehouse = LeanStoreAdapter<warehouse_t>(db, "warehouse");
