@@ -79,28 +79,25 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       auto new_left_node_h = HybridPageGuard<BTreeNode>(dt_id);
       auto new_left_node = ExclusivePageGuard<BTreeNode>(std::move(new_left_node_h));
       // -------------------------------------------------------------------------------------
-      auto exec = [&]() {
-         new_root.keepAlive();
-         new_root.init(false);
-         // set the upper pointer for the new root, which is the old root node which is now the right/upper child
-         new_root->upper = c_x_guard.getBufferFrame();
-         // set the upper pointer of the meta node of the btree to the new root
-         p_x_guard->upper = new_root.getBufferFrame();
+      new_root.keepAlive();
+      new_root.init(false);
+      // set the upper pointer for the new root, which is the old root node which is now the right/upper child
+      new_root->upper = c_x_guard.getBufferFrame();
+      // set the upper pointer of the meta node of the btree to the new root
+      p_x_guard->upper = new_root.getBufferFrame();
 
-         new_root->type = LSM_TYPE::InMemoryBTree; // TODO check if it is InMemoryTree
-         new_root->level = 0;
+      new_root->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
+      new_root->level = c_x_guard->level;
 
-         // -------------------------------------------------------------------------------------
-         new_left_node.init(c_x_guard->is_leaf);
+      // -------------------------------------------------------------------------------------
+      new_left_node.init(c_x_guard->is_leaf);
 
-         new_left_node->type = LSM_TYPE::InMemoryBTree; // TODO check if it is InMemoryTree
-         new_left_node->level = 0;
+      new_left_node->type = c_x_guard->type;
+      new_left_node->level = c_x_guard->level;
 
-         c_x_guard->getSep(sep_key, sep_info);
-         // -------------------------------------------------------------------------------------
-         c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
-      };
-      exec();
+      c_x_guard->getSep(sep_key, sep_info);
+      // -------------------------------------------------------------------------------------
+      c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
       // -------------------------------------------------------------------------------------
       height++;
       return;
@@ -519,6 +516,28 @@ s64 BTreeGeneric::iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard,
    // -------------------------------------------------------------------------------------
    return res;
 }
+s64 BTreeGeneric::iterateAllPagesRecNodeGuard(HybridPageGuard<BTreeNode>& node_guard,
+                                     std::function<s64(HybridPageGuard<BTreeNode>&)> inner,
+                                     std::function<s64(HybridPageGuard<BTreeNode>&)> leaf)
+{
+   if (node_guard->is_leaf) {
+      return leaf(node_guard);
+   }
+   s64 res = inner(node_guard);
+   for (u16 i = 0; i < node_guard->count; i++) {
+      Swip<BTreeNode>& c_swip = node_guard->getChild(i);
+      auto c_guard = HybridPageGuard(node_guard, c_swip);
+      c_guard.recheck();
+      res += iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
+   }
+   // -------------------------------------------------------------------------------------
+   Swip<BTreeNode>& c_swip = node_guard->upper;
+   auto c_guard = HybridPageGuard(node_guard, c_swip);
+   c_guard.recheck();
+   res += iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
+   // -------------------------------------------------------------------------------------
+   return res;
+}
 // -------------------------------------------------------------------------------------
 s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf)
 {
@@ -528,6 +547,17 @@ s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::fun
          HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
          HybridPageGuard c_guard(p_guard, p_guard->upper);
          jumpmu_return iterateAllPagesRec(c_guard, inner, leaf);
+      }
+      jumpmuCatch() {}
+   }
+}s64 BTreeGeneric::iterateAllPagesNodeGuard(std::function<s64(HybridPageGuard<BTreeNode>&)> inner, std::function<s64(HybridPageGuard<BTreeNode>&)> leaf)
+{
+   while (true) {
+      jumpmuTry()
+      {
+         HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
+         HybridPageGuard c_guard(p_guard, p_guard->upper);
+         jumpmu_return iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
       }
       jumpmuCatch() {}
    }
@@ -575,13 +605,17 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
 // -------------------------------------------------------------------------------------
 
 
-
+//TODO make pageGuards exclusive
 void BTreeGeneric::insertLeafNode(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
 
    // lock the meta node
    HybridPageGuard<BTreeNode> metaNode_guard(meta_node_bf);
+   //ExclusivePageGuard<BTreeNode> metaNode_guard_exclusive = ExclusivePageGuard(std::move(metaNode_guard)); // exclusive guard for metaNode
    //lock the root node
    HybridPageGuard root_guard(metaNode_guard, metaNode_guard->upper);
+   //ExclusivePageGuard<BTreeNode> root_guard_exclusive = ExclusivePageGuard(std::move(root_guard)); // exclusive guard for metaNode
+
+   //TODO: update dummy node lower fence
 
    //Swip<BTreeNode*> rootNode = metaNode_guard->upper;
 
@@ -610,6 +644,7 @@ void BTreeGeneric::insertLeafSorted(HybridPageGuard<BTreeNode>& parent_guard,
       // no more space, need to split
       //ExclusivePageGuard parent_x_guard(std::move(parent_guard));
       parent_guard.unlock();
+      //TODO: set the type in trySplit correct (in this case not in-memory-BTree !)
       trySplit(*parent_guard.bufferFrame);
 
       // retry insert

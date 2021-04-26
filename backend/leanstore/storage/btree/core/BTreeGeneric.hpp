@@ -104,7 +104,9 @@ class BTreeGeneric
    inline bool isMetaNode(HybridPageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bufferFrame; }
    inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard) { return meta_node_bf == guard.getBufferFrame(); }
    s64 iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
+   s64 iterateAllPagesNodeGuard(std::function<s64(HybridPageGuard<BTreeNode>&)> inner, std::function<s64(HybridPageGuard<BTreeNode>&)> leaf);
    s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
+   s64 iterateAllPagesRecNodeGuard(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(HybridPageGuard<BTreeNode>&)> inner, std::function<s64(HybridPageGuard<BTreeNode>&)> leaf);
    u64 countInner();
    u64 countPages();
    u64 countEntries();
