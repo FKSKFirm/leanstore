@@ -29,14 +29,18 @@ struct StaticBTree {
 };
 
 struct LSM : public KeyValueInterface {
-   uint64_t baseLimit = (1024 * 1024 * 8) / btree::btreePageSize;
-   uint64_t factor = 10;
+   //uint64_t baseLimit = (1024 * 1024 * 8) / btree::btreePageSize;
+   uint64_t baseLimit = (1024 * 8) / btree::btreePageSize;
+   //uint64_t factor = 10;
+   uint64_t factor = 2;
 
    // pointer to inMemory BTree (Root of LSM-Tree)
    std::unique_ptr<btree::BTreeLL> inMemBTree;
    std::vector<std::unique_ptr<StaticBTree>> tiers;
    DTID dt_id;
    BufferFrame* meta_node_bf;  // kept in memory
+   bool inMerge = false;
+   uint64_t levelInMerge = 0;
 
    LSM();
    ~LSM();
