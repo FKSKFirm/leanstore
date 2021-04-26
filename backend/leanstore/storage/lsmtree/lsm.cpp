@@ -246,6 +246,8 @@ unique_ptr<StaticBTree> LSM::mergeTrees(btree::BTreeNode* aTree, btree::BTreeNod
    Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
    newMetaNode.header.keep_in_memory = true;
    newMetaNode.page.dt_id = this->dt_id;
+   ((btree::BTreeNode*)newMetaNode.page.dt)->type = dsi.type;
+   ((btree::BTreeNode*)newMetaNode.page.dt)->level = dsi.level;
    guard.unlock();
 
    newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
@@ -363,6 +365,8 @@ void LSM::create(DTID dtid, BufferFrame* meta_bf)
    Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
    newMetaBufferPage.header.keep_in_memory = true;
    newMetaBufferPage.page.dt_id = dtid;
+   ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = LSM_TYPE::InMemoryBTree;
+   ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = 0;
    guard.unlock();
 
    // create the inMemory BTree
@@ -462,6 +466,8 @@ void LSM::mergeAll()
             tiers[i+1]->tree.level = i+1;
             tiers[i+1]->filter.type = LSM_TYPE::BloomFilter;
             tiers[i+1]->filter.level = i+1;
+            ((btree::BTreeNode*)tiers[i+1]->tree.meta_node_bf->page.dt)->type = LSM_TYPE::BTree;
+            ((btree::BTreeNode*)tiers[i+1]->tree.meta_node_bf->page.dt)->level = i+1;
             // set every BTreeNode->level to the new level i+1
             tiers[i+1]->tree.iterateAllPages([i](btree::BTreeNode& innerNode) { innerNode.level = i+1; return 0; }, [i](btree::BTreeNode& leafNode) { leafNode.level = i+1; return 0; });
          }
@@ -473,10 +479,16 @@ void LSM::mergeAll()
          Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
          newMetaBufferPage.header.keep_in_memory = true;
          newMetaBufferPage.page.dt_id = this->dt_id;
+         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = LSM_TYPE::BTree;
+         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = i;
          guard.unlock();
 
+         DataStructureIdentifier dsi = DataStructureIdentifier();
+         dsi.type = LSM_TYPE::BTree;
+         dsi.level = i;
+
          //create btree for level tiers[i]
-         tiers[i]->tree.create(this->dt_id, &newMetaBufferPage);
+         tiers[i]->tree.create(this->dt_id, &newMetaBufferPage, &dsi);
          tiers[i]->tree.type = LSM_TYPE::BTree;
          tiers[i]->tree.level = i;
          tiers[i]->filter.type = LSM_TYPE::BloomFilter;
@@ -693,12 +705,17 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
          Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
          newMetaBufferPage.header.keep_in_memory = true;
          newMetaBufferPage.page.dt_id = this->dt_id;
+         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = LSM_TYPE::InMemoryBTree;
+         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = 0;
          guard.unlock();
 
          //create in-memory btree
-         inMemBTree->create(this->dt_id, &newMetaBufferPage);
-         inMemBTree->type = LSM_TYPE::InMemoryBTree;
-         inMemBTree->level = 0;
+         DataStructureIdentifier dsi = DataStructureIdentifier();
+         dsi.type = LSM_TYPE::InMemoryBTree;
+         dsi.level = 0;
+         inMemBTree->create(this->dt_id, &newMetaBufferPage, &dsi);
+         inMemBTree->type = dsi.type;
+         inMemBTree->level = dsi.level;
 
          // if necessary merge further levels
          mergeAll();

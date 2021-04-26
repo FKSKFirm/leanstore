@@ -92,7 +92,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       // -------------------------------------------------------------------------------------
       new_left_node.init(c_x_guard->is_leaf);
 
-      new_left_node->type = c_x_guard->type;
+      new_left_node->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
       new_left_node->level = c_x_guard->level;
 
       c_x_guard->getSep(sep_key, sep_info);
@@ -118,8 +118,8 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          auto exec = [&]() {
             new_left_node.init(c_x_guard->is_leaf);
 
-            new_left_node->type = LSM_TYPE::InMemoryBTree; // TODO check if it is really a InMemoryTree
-            new_left_node->level = 0;
+            new_left_node->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
+            new_left_node->level = c_x_guard->level;
 
             c_x_guard->getSep(sep_key, sep_info);
             c_x_guard->split(p_x_guard, new_left_node, sep_info.slot, sep_key, sep_info.length);
