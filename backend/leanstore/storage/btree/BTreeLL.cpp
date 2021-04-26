@@ -27,7 +27,7 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
          HybridPageGuard<BTreeNode> leaf;
          findLeafCanJump(leaf, key, key_length);
          // -------------------------------------------------------------------------------------
-         DEBUG_BLOCK()
+         /*DEBUG_BLOCK()
          {
             s16 sanity_check_result = leaf->compareKeyWithBoundaries(key, key_length);
             leaf.recheck();
@@ -35,7 +35,7 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
                cout << leaf->count << endl;
             }
             ensure(sanity_check_result == 0);
-         }
+         }*/
          // -------------------------------------------------------------------------------------
          s16 pos = leaf->lowerBound<true>(key, key_length);
          if (pos != -1) {
@@ -44,7 +44,8 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
             jumpmu_return OP_RESULT::OK;
          } else {
             leaf.recheck();
-            raise(SIGTRAP);
+            // dont raise SIGTRAP, because if one value does not occur it may be in an other LSM Tree layer
+            //raise(SIGTRAP);
             jumpmu_return OP_RESULT::NOT_FOUND;
          }
       }
