@@ -362,14 +362,14 @@ void BTreeNode::split(ExclusivePageGuard<BTreeNode>& parent, ExclusivePageGuard<
    // -------------------------------------------------------------------------------------
    nodeLeft->setFences(getLowerFenceKey(), lower_fence.length, sepKey, sepLength);
 
-   nodeLeft->type = LSM_TYPE::InMemoryBTree;
-   nodeLeft->level = parent->level;
+   //nodeLeft->type = nodeLeft->type;
+   //nodeLeft->level = parent->level;
 
    BTreeNode tmp(is_leaf);
    BTreeNode* nodeRight = &tmp;
    nodeRight->setFences(sepKey, sepLength, getUpperFenceKey(), upper_fence.length);
 
-   nodeRight->type = LSM_TYPE::InMemoryBTree;
+   nodeRight->type = parent->type;
    nodeRight->level = parent->level;
 
    assert(parent->canInsert(sepLength, sizeof(SwipType)));
