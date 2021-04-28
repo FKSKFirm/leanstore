@@ -461,6 +461,7 @@ void LSM::mergeAll()
             ensure(tiers[i+1]->filter.level == i+1);
          } else {
             // new level
+            cout<< "neues level, jetzt: " << i+1 <<endl;
             tiers.emplace_back(move(tiers.back()));
             tiers[i+1]->tree.type = LSM_TYPE::BTree;
             tiers[i+1]->tree.level = i+1;

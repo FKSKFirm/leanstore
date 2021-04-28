@@ -63,7 +63,7 @@ int main(int argc, char** argv)
    /* ********************* Own Test begin ****************/
    test = LeanStoreAdapter<test_t>(db, "onw_test");
 
-   uint64_t zaehler = ITEMS_NO;
+   uint64_t zaehler = ITEMS_NO; //100k
    for (uint64_t count = 0; count < 100000000000; count++) {
       // Load data
       for (Integer i = zaehler * count; i < zaehler * (count+1); i++) {
@@ -71,8 +71,8 @@ int main(int argc, char** argv)
          if (rnd(10) == 0) {
             i_data.length = rnd(i_data.length - 8);
             i_data = i_data || Varchar<10>("ORIGINAL");
+            //cout << "Test Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
          }
-         cout << "Test Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
          test.insert({i}, {randomastring<100>(14, 100)});
          //cout << "Insert done" << endl;
 
@@ -80,6 +80,7 @@ int main(int argc, char** argv)
          test_tx(i);
          //cout << "Test Select Done." << endl;
       }
+      cout << "Test Insert until ID: " << zaehler * (count+1) << endl;
       // -------------------------------------------------------------------------------------
       double gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
       cout << "data loaded - consumed space in GiB = " << gib << endl;

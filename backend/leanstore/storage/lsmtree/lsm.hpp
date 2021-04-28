@@ -29,8 +29,8 @@ struct StaticBTree {
 };
 
 struct LSM : public KeyValueInterface {
-   //uint64_t baseLimit = (1024 * 1024 * 8) / btree::btreePageSize;
-   uint64_t baseLimit = (1024 * 8) / btree::btreePageSize;
+   uint64_t baseLimit = (1024 * 1024 * 8) / btree::btreePageSize;
+   //uint64_t baseLimit = (1024 * 8) / btree::btreePageSize;
    //uint64_t factor = 10;
    uint64_t factor = 2;
 
