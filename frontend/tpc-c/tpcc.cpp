@@ -60,7 +60,7 @@ int main(int argc, char** argv)
    LeanStore db;
    auto& crm = db.getCRManager();
 
-   /* ********************* Own Test begin ****************/
+   /* ********************* Own Test begin ****************
    test = LeanStoreAdapter<test_t>(db, "onw_test");
 
    uint64_t zaehler = ITEMS_NO; //100k
@@ -136,6 +136,7 @@ int main(int argc, char** argv)
          loadItem();
          loadWarehouse();
       });
+      cout << "loaditemWarehouse" << endl;
       std::atomic<u32> g_w_id = 1;
       for (u32 t_i = 0; t_i < FLAGS_worker_threads; t_i++) {
          crm.scheduleJobAsync(t_i, [&]() {
@@ -145,11 +146,14 @@ int main(int argc, char** argv)
                   return;
                }
                loadStock(w_id);
+               cout << "loadStock done" << endl;
                loadDistrinct(w_id);
+               cout << "loadDistrict done" << endl;
                for (Integer d_id = 1; d_id <= 10; d_id++) {
                   loadCustomer(w_id, d_id);
                   loadOrders(w_id, d_id);
                }
+               cout << "loadCustomerOrders done" << endl;
             }
          });
       }

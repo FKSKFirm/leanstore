@@ -141,19 +141,19 @@ void loadItem()
          i_data.length = rnd(i_data.length - 8);
          i_data = i_data || Varchar<10>("ORIGINAL");
       }
-      cout << "Item Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
+      //cout << "Item Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
       item.insert({i}, {randomId(1, 10000), randomastring<24>(14, 24), randomNumeric(1.00, 100.00), i_data});
-      cout << "Insert done" << endl;
+      //cout << "Insert done" << endl;
    }
 }
 
 void loadWarehouse()
 {
    for (Integer i = 0; i < warehouseCount; i++) {
-      cout << "Warehouse Insert ID: " << i << endl;
+      //cout << "Warehouse Insert ID: " << i << endl;
       warehouse.insert({i + 1}, {randomastring<10>(6, 10), randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
                                  randomastring<2>(2, 2), randomzip(), randomNumeric(0.1000, 0.2000), 3000000});
-      cout << "Insert done" << endl;
+      //cout << "Insert done" << endl;
    }
 }
 
@@ -165,21 +165,21 @@ void loadStock(Integer w_id)
          s_data.length = rnd(s_data.length - 8);
          s_data = s_data || Varchar<10>("ORIGINAL");
       }
-      cout << "Stock Insert ID: " << w_id << " " << i << " Daten: "<< s_data.data << " " << endl;
+      //cout << "Stock Insert ID: " << w_id << " " << i << " Daten: "<< s_data.data << " " << endl;
       stock.insert({w_id, i + 1}, {randomNumeric(10, 100), randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24),
                                    randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24),
                                    randomastring<24>(24, 24), randomastring<24>(24, 24), randomastring<24>(24, 24), 0, 0, 0, s_data});
-      cout << "Insert done" << endl;
+      //cout << "Insert done" << endl;
    }
 }
 
 void loadDistrinct(Integer w_id)
 {
    for (Integer i = 1; i < 11; i++) {
-      cout << "District Insert ID: " << w_id << " " << i << endl;
+      //cout << "District Insert ID: " << w_id << " " << i << endl;
       district.insert({w_id, i}, {randomastring<10>(6, 10), randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
                                   randomastring<2>(2, 2), randomzip(), randomNumeric(0.0000, 0.2000), 3000000, 3001});
-      cout << "Insert done" << endl;
+      //cout << "Insert done" << endl;
    }
 }
 
@@ -199,11 +199,11 @@ void loadCustomer(Integer w_id, Integer d_id)
          c_last = genName(getNonUniformRandomLastNameForLoad());
       Varchar<16> c_first = randomastring<16>(8, 16);
       Varchar<2> c_credit(rnd(10) ? "GC" : "BC");
-      cout << "Customer Insert wID: " << w_id << " dID: "<< d_id << " i: " << i << endl;
+      //cout << "Customer Insert wID: " << w_id << " dID: "<< d_id << " i: " << i << endl;
       customer.insert({w_id, d_id, i + 1}, {c_first, "OE", c_last, randomastring<20>(10, 20), randomastring<20>(10, 20), randomastring<20>(10, 20),
                                             randomastring<2>(2, 2), randomzip(), randomnstring(16, 16), now, c_credit, 50000.00,
                                             randomNumeric(0.0000, 0.5000), -10.00, 1, 0, 0, randomastring<500>(300, 500)});
-      cout << "Insert done" << endl;
+      //cout << "Insert done" << endl;
       customerwdl.insert({w_id, d_id, c_last, c_first}, {i + 1});
       Integer t_id = (Integer)WorkerCounters::myCounters().t_id;
       Integer h_id = (Integer)WorkerCounters::myCounters().variable_for_workload++;
