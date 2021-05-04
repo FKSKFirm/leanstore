@@ -431,6 +431,7 @@ struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFra
    // -------------------------------------------------------------------------------------
    Swip<BTreeNode>* c_swip = &p_guard->upper; // get swip for rootNode
    if (btree.dt_id != to_find.page.dt_id || (!p_guard->upper.isHOT())) {
+      // false btree or the meta_node ist not in hot state
       jumpmu::jump();
    }
    // -------------------------------------------------------------------------------------
@@ -538,6 +539,32 @@ s64 BTreeGeneric::iterateAllPagesRecNodeGuard(HybridPageGuard<BTreeNode>& node_g
    // -------------------------------------------------------------------------------------
    return res;
 }
+s64 BTreeGeneric::releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard)
+{
+   // if its a leaf node release it
+   if (node_guard->is_leaf) {
+      auto x_guard = ExclusivePageGuard(std::move(node_guard));
+      x_guard.reclaim();
+      return 0;
+   }
+
+   // if not, its a inner node, search all children & upper ptr for leaf nodes
+   for (u16 i = 0; i < node_guard->count; i++) {
+      Swip<BTreeNode>& c_swip = node_guard->getChild(i);
+      auto c_guard = HybridPageGuard(node_guard, c_swip);
+      c_guard.recheck();
+      releaseAllPagesRec(c_guard);
+   }
+   Swip<BTreeNode>& c_swip = node_guard->upper;
+   auto c_guard = HybridPageGuard(node_guard, c_swip);
+   c_guard.recheck();
+   releaseAllPagesRec(c_guard);
+
+   // Release this inner node
+   auto x_guard = ExclusivePageGuard(std::move(node_guard));
+   x_guard.reclaim();
+   return 0;
+}
 // -------------------------------------------------------------------------------------
 s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf)
 {
@@ -546,7 +573,8 @@ s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::fun
       {
          HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
          HybridPageGuard c_guard(p_guard, p_guard->upper);
-         jumpmu_return iterateAllPagesRec(c_guard, inner, leaf);
+         s64 result = iterateAllPagesRec(c_guard, inner, leaf);
+         jumpmu_return result;
       }
       jumpmuCatch() {}
    }
@@ -557,7 +585,8 @@ s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::fun
       {
          HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
          HybridPageGuard c_guard(p_guard, p_guard->upper);
-         jumpmu_return iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
+         s64 result = iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
+         jumpmu_return result;
       }
       jumpmuCatch() {}
    }
@@ -634,7 +663,7 @@ void BTreeGeneric::insertLeafSorted(HybridPageGuard<BTreeNode>& parent_guard,
 
    if (current_node->is_leaf) {
 
-      unsigned pageCountBefore = countPages();
+      //unsigned pageCountBefore = countPages();
       if (parent_guard->canInsert(keyLength, sizeof(BTreeNode*))) {
          auto swip = leaf.swip();
          parent_guard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));

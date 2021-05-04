@@ -107,6 +107,7 @@ class BTreeGeneric
    s64 iterateAllPagesNodeGuard(std::function<s64(HybridPageGuard<BTreeNode>&)> inner, std::function<s64(HybridPageGuard<BTreeNode>&)> leaf);
    s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
    s64 iterateAllPagesRecNodeGuard(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(HybridPageGuard<BTreeNode>&)> inner, std::function<s64(HybridPageGuard<BTreeNode>&)> leaf);
+   s64 releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard);
    u64 countInner();
    u64 countPages();
    u64 countEntries();

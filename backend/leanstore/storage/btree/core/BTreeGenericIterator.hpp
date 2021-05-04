@@ -44,15 +44,23 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
    }
    bool prevLeaf()
    {
+      //check if it is the leafNode with the lowest entries (lowerFence=0)
       if (leaf->lower_fence.length == 0) {
          return false;
       } else {
+         //a leafNode with smaller elements exists
          const u16 key_length = leaf->lower_fence.length;
+
+         //copy the lowerFenceKey of the current node and unlock the node
          u8 key[key_length];
          std::memcpy(key, leaf->getLowerFenceKey(), leaf->lower_fence.length);
          leaf.unlock();
+
+         //find the previous leaf node through the lowerFenceKey
          btree.findLeafAndLatch<mode>(leaf, key, key_length);
          cur = leaf->lowerBound<false>(key, key_length);
+
+         //TODO ASK: Why? lowerBound should return the first slotID where the key is smaller than the searched key?
          if (cur == leaf->count) {
             cur -= 1;
          }
@@ -61,6 +69,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
    }
 
   public:
+   // =
    virtual OP_RESULT seekExact(Slice key) override
    {
       if (cur == -1 || leaf->compareKeyWithBoundaries(key.data(), key.length()) != 0) {
@@ -74,6 +83,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
       }
    }
    // -------------------------------------------------------------------------------------
+   // >=
    virtual OP_RESULT seek(Slice key) override
    {
       if (cur == -1 || leaf->compareKeyWithBoundaries(key.data(), key.length()) != 0) {
@@ -87,6 +97,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
       }
    }
    // -------------------------------------------------------------------------------------
+   // <=
    virtual OP_RESULT seekForPrev(Slice key) override
    {
       if (cur == -1 || leaf->compareKeyWithBoundaries(key.data(), key.length()) != 0) {
@@ -97,6 +108,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
       if (is_equal == true) {
          return OP_RESULT::OK;
       } else if (cur == 0) {
+         //prevLeaf() sets the leaf to the previous leaf node, so leaf->node is now the previous node
          if (prevLeaf() && cur < leaf->count) {
             return OP_RESULT::OK;
          } else {
@@ -114,11 +126,17 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
          cur += 1;
          return OP_RESULT::OK;
       } else {
-         if (nextLeaf() && leaf->count > 0) {
-            return OP_RESULT::OK;
-         } else {
+         retry : {
+         if (!nextLeaf()) {
             return OP_RESULT::NOT_FOUND;
+         } else {
+            if (leaf->count == 0) {
+               goto retry;
+            } else {
+               return OP_RESULT::OK;
+            }
          }
+      }
       }
    }
    // -------------------------------------------------------------------------------------
@@ -128,12 +146,17 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
          cur -= 1;
          return OP_RESULT::OK;
       } else {
-         if (prevLeaf() && leaf->count > 0) {
-            cur = leaf->count - 1;
-            return OP_RESULT::OK;
-         } else {
+         retry : {
+         if (!prevLeaf()) {
             return OP_RESULT::NOT_FOUND;
+         } else {
+            if (leaf->count == 0) {
+               goto retry;
+            } else {
+               return OP_RESULT::OK;
+            }
          }
+      }
       }
    }
    // -------------------------------------------------------------------------------------

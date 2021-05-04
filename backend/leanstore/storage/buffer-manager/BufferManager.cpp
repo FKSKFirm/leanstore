@@ -151,10 +151,17 @@ BufferFrame& BufferManager::randomBufferFrame()
    auto rand_buffer_i = utils::RandomGenerator::getRand<u64>(0, dram_pool_size);
    return bfs[rand_buffer_i];
 }
+int pageAllocations = 0;
+int pagesInUse = 0;
+int pageFrees = 0;
 // -------------------------------------------------------------------------------------
 // returns a *write locked* new buffer frame
 BufferFrame& BufferManager::allocatePage()
 {
+   pageAllocations++;
+   pagesInUse++;
+   if (pagesInUse>4910)
+      cout << "Pages in use: " << pagesInUse << endl;
    // Pick a pratition randomly
    Partition& partition = randomPartition();
    BufferFrame& free_bf = partition.dram_free_list.pop();
@@ -172,6 +179,9 @@ BufferFrame& BufferManager::allocatePage()
    if (free_pid == dram_pool_size) {
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Going out of memory !" << endl;
+      cout << "Pages allocated: " << pageAllocations << endl;
+      cout << "Pages in use: " << pagesInUse << endl;
+      cout << "Pages freed: " << pageFrees << endl;
       cout << "-------------------------------------------------------------------------------------" << endl;
    }
    free_bf.header.latch.assertExclusivelyLatched();
@@ -186,6 +196,8 @@ BufferFrame& BufferManager::allocatePage()
 // -------------------------------------------------------------------------------------
 void BufferManager::reclaimPage(BufferFrame& bf)
 {
+   pagesInUse--;
+   pageFrees++;
    Partition& partition = getPartition(bf.header.pid);
    partition.freePage(bf.header.pid);
    // -------------------------------------------------------------------------------------

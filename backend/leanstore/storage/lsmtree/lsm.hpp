@@ -40,7 +40,7 @@ struct LSM : public KeyValueInterface {
    DTID dt_id;
    BufferFrame* meta_node_bf;  // kept in memory
    bool inMerge = false;
-   uint64_t levelInMerge = 0;
+   btree::BTreeLL* levelInMerge;
 
    LSM();
    ~LSM();
@@ -51,7 +51,8 @@ struct LSM : public KeyValueInterface {
 
    // merges
    void mergeAll();
-   unique_ptr<StaticBTree> mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree);
+   //unique_ptr<StaticBTree> mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree);
+   unique_ptr<StaticBTree> mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree, HybridPageGuard<btree::BTreeNode>* bTree);
 
    //void insert(uint8_t* key, unsigned keyLength, uint8_t* payload, unsigned payloadLength);
 
