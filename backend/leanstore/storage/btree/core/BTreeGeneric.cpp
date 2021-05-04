@@ -541,11 +541,12 @@ s64 BTreeGeneric::iterateAllPagesRecNodeGuard(HybridPageGuard<BTreeNode>& node_g
 }
 s64 BTreeGeneric::releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard)
 {
+   int counter = 0;
    // if its a leaf node release it
    if (node_guard->is_leaf) {
       auto x_guard = ExclusivePageGuard(std::move(node_guard));
       x_guard.reclaim();
-      return 0;
+      return 1;
    }
 
    // if not, its a inner node, search all children & upper ptr for leaf nodes
@@ -553,17 +554,17 @@ s64 BTreeGeneric::releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard)
       Swip<BTreeNode>& c_swip = node_guard->getChild(i);
       auto c_guard = HybridPageGuard(node_guard, c_swip);
       c_guard.recheck();
-      releaseAllPagesRec(c_guard);
+      counter += releaseAllPagesRec(c_guard);
    }
    Swip<BTreeNode>& c_swip = node_guard->upper;
    auto c_guard = HybridPageGuard(node_guard, c_swip);
    c_guard.recheck();
-   releaseAllPagesRec(c_guard);
+   counter += releaseAllPagesRec(c_guard);
 
    // Release this inner node
    auto x_guard = ExclusivePageGuard(std::move(node_guard));
    x_guard.reclaim();
-   return 0;
+   return counter+1;
 }
 // -------------------------------------------------------------------------------------
 s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf)

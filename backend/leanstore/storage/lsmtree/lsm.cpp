@@ -319,10 +319,14 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
             // release all nodes of the two merged trees
             if (aTree->type == LSM_TYPE::InMemoryBTree) {
 
-               this->inMemBTree->releaseAllPagesRec(*aTreePG);
+               int beforeCounter = this->inMemBTree->countPages();
+               int counter = this->inMemBTree->releaseAllPagesRec(*aTreePG);
+               assert(counter == beforeCounter);
                //bTree can be null, when only the inMemTree exists
                if(bTree != NULL) {
-                  this->tiers[0]->tree.releaseAllPagesRec(*bTreePG);
+                  beforeCounter = this->tiers[0]->tree.countPages();
+                  counter = this->tiers[0]->tree.releaseAllPagesRec(*bTreePG);
+                  assert(counter == beforeCounter);
                }
 /*
                s64 count = this->inMemBTree->iterateAllPagesNodeGuard([&nodesToRelease](HybridPageGuard<btree::BTreeNode>& innerNode) {
@@ -336,10 +340,14 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
                }*/
             }
             else {
-               this->tiers[dsi.level-1]->tree.releaseAllPagesRec(*aTreePG);
+               int beforeCounter = this->tiers[dsi.level-1]->tree.countPages();
+               int counter = this->tiers[dsi.level-1]->tree.releaseAllPagesRec(*aTreePG);
+               assert(counter == beforeCounter);
                //bTree should not be null, because when the tree at level x is too large it is only moved to level x+1 in mergeAll()
                if(bTree != NULL) {
-                  this->tiers[dsi.level]->tree.releaseAllPagesRec(*bTreePG);
+                  beforeCounter = this->tiers[dsi.level]->tree.countPages();
+                  counter = this->tiers[dsi.level]->tree.releaseAllPagesRec(*bTreePG);
+                  assert(counter == beforeCounter);
                }
             }
 
