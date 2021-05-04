@@ -45,6 +45,9 @@ void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifi
    HybridPageGuard<BTreeNode> meta_guard(meta_bf);
    ExclusivePageGuard meta_page(std::move(meta_guard));
    meta_page->upper = root_write_guard.getBufferFrame();  // HACK: use upper of meta node as a swip to the storage root
+   if (dsi->type == LSM_TYPE::InMemoryBTree) {
+      root_write_guard.getBufferFrame()->header.keep_in_memory = true;
+   }
 }
 // -------------------------------------------------------------------------------------
 void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
@@ -88,12 +91,18 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
 
       new_root->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
       new_root->level = c_x_guard->level;
+      if (c_x_guard->type == LSM_TYPE::InMemoryBTree) {
+         new_root.getBufferFrame()->header.keep_in_memory = true;
+      }
 
       // -------------------------------------------------------------------------------------
       new_left_node.init(c_x_guard->is_leaf);
 
       new_left_node->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
       new_left_node->level = c_x_guard->level;
+      if (c_x_guard->type == LSM_TYPE::InMemoryBTree) {
+         new_left_node.getBufferFrame()->header.keep_in_memory = true;
+      }
 
       c_x_guard->getSep(sep_key, sep_info);
       // -------------------------------------------------------------------------------------
@@ -120,6 +129,9 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
 
             new_left_node->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
             new_left_node->level = c_x_guard->level;
+            if (c_x_guard->type == LSM_TYPE::InMemoryBTree) {
+               new_left_node.getBufferFrame()->header.keep_in_memory = true;
+            }
 
             c_x_guard->getSep(sep_key, sep_info);
             c_x_guard->split(p_x_guard, new_left_node, sep_info.slot, sep_key, sep_info.length);

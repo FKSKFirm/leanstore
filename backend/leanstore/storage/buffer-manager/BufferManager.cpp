@@ -160,8 +160,8 @@ BufferFrame& BufferManager::allocatePage()
 {
    pageAllocations++;
    pagesInUse++;
-   if (pagesInUse>4910)
-      cout << "Pages in use: " << pagesInUse << endl;
+   //if (pagesInUse>4910)
+     // cout << "Pages in use: " << pagesInUse << endl;
    // Pick a pratition randomly
    Partition& partition = randomPartition();
    BufferFrame& free_bf = partition.dram_free_list.pop();
