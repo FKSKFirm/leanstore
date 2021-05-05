@@ -10,7 +10,7 @@ namespace leanstore
 namespace storage
 {
 // -------------------------------------------------------------------------------------
-enum class OP_RESULT : u8 { OK = 0, NOT_FOUND = 1, DUPLICATE = 2, ABORT_TX = 3, NOT_ENOUGH_SPACE = 4, OTHER = 5 };
+enum class OP_RESULT : u8 { OK = 0, NOT_FOUND = 1, DUPLICATE = 2, ABORT_TX = 3, NOT_ENOUGH_SPACE = 4, OTHER = 5, LSM_DELETED = 6 };
 // -------------------------------------------------------------------------------------
 // Interface
 class KeyValueInterface
