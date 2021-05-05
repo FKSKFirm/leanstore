@@ -71,6 +71,7 @@ struct BTreeIterator {
             }
             // remove leaf node when all node entries of him are processed
             stack->pop_back();
+            // TODO from BTreeNodes to HybridPageGuards & if one node is done, do a page.reclaim directly
          } else {
             // inner node
             if (pos + 1 < node->count) {
@@ -87,6 +88,7 @@ struct BTreeIterator {
                // up
                // TODO: all children are processed and in the stack, remove (inner parent) node?????
                stack->pop_back();
+               // TODO: Do a page.reclaim for this inner node
             }
          }
       }
@@ -234,9 +236,6 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
       dsi.level = bTree->level;
    }
 
-   this->inMerge = true;
-   this->levelInMerge = &newTree->tree;
-
    // create new meta_node (could even pick the meta_node of aTree or bTree, but here we only know the root of these two trees, not the meta node)
    auto& newMetaNode = BMC::global_bf->allocatePage();
    Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
@@ -247,6 +246,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
    guard.unlock();
 
    newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
+   this->bTreeInMerge = &newTree->tree;
 
    btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
    btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
@@ -317,9 +317,6 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
                   assert(counter == beforeCounter);
                }
             }
-
-            this->inMerge = false;
-            this->levelInMerge = nullptr;
 
             return newTree;
          }
@@ -418,6 +415,7 @@ void LSM::mergeAll()
       StaticBTree& curr = *tiers[i];
       if (curr.tree.countPages() >= limit) {
          // current observed BTree is too large
+         this->levelInMerge = i+1;
          if (i + 1 < tiers.size()) {
             // merge with next level
             StaticBTree& next = *tiers[i + 1];
@@ -664,6 +662,8 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
       u64 pageCount = inMemBTree->countPages();
       if (pageCount >= baseLimit) {
          // merge inMemory-BTree with first level BTree of LSM Tree
+         this->inMerge = true;
+         this->levelInMerge = 0;
 
          // init pageGuard to the metaNode
          HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
@@ -676,9 +676,10 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
          // merge the two trees / pull the in-mem-tree down (if only in-mem-tree exists)
          unique_ptr<StaticBTree> neu;
          if (old != nullptr) {
+            this->bTreeInMerge = &tiers[0]->tree;
             HybridPageGuard<btree::BTreeNode> old_guard(tiers[0]->tree.meta_node_bf);
             HybridPageGuard<btree::BTreeNode> old_RootPageGuard = HybridPageGuard<btree::BTreeNode>(old_guard, old_guard->upper);
-            neu = mergeTrees(&rootPageGuard, &old_RootPageGuard);
+            tiers[0] = mergeTrees(&rootPageGuard, &old_RootPageGuard);
 
             //release meta nodes after merge
             ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
@@ -687,18 +688,13 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
             tier0MetaNode_x_guard.reclaim();
          }
          else {
-            neu = mergeTrees(&rootPageGuard, nullptr);
+            tiers.emplace_back(move(mergeTrees(&rootPageGuard, nullptr)));
 
             //release the meta node after merge
             ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
             inMemMetaNode_x_guard.reclaim();
          }
          //cout << "mergeTrees() in insert, lower fence von neu: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getLowerFenceKey() << " upper fence: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getUpperFenceKey() << endl;
-
-         if (tiers.size()) // some levels are already there, replace tiers[0]
-            tiers[0] = move(neu);
-         else // only In-Memory exists yet, generate first tier
-            tiers.emplace_back(move(neu));
 
          ensure(tiers[0]->tree.type == LSM_TYPE::BTree);
          ensure(tiers[0]->filter.type == LSM_TYPE::BloomFilter);
@@ -710,6 +706,7 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 
          // if necessary merge further levels
          mergeAll();
+         this->inMerge = false;
       }
       return result;
 }
@@ -772,11 +769,11 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
    LSM* tree = static_cast<LSM*>(reinterpret_cast<LSM*>(lsm_object));
 
    // check, if merge between two level is ongoing
-   if (tree->inMerge) {
+   if (tree->inMerge && tree->levelInMerge == toFindLevel) {//toFindLevel == tree->bTreeInMerge->level) {
       counterInMerge++;
       cout << "Could not find parent counter: " << counterInMerge << endl;
       jumpmu::jump();
-      if (toFindType != LSM_TYPE::InMemoryBTree && toFindLevel == tree->levelInMerge->level) {
+      if (toFindType != LSM_TYPE::InMemoryBTree && toFindLevel == tree->bTreeInMerge->level) {
          // page to_find can be in old btree at toFindLevel or can be the new created btree
          // TODO check old btree and btree in built
          jumpmuTry() {
@@ -786,7 +783,7 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
          jumpmuCatch(){// Not found in the level, Buffer Manager should retry and find another buffer frame
             jumpmu::jump();
             //could also check the currently in build tree:
-            //btree::BTreeLL* btreeLevel = tree->levelInMerge;
+            //btree::BTreeLL* btreeLevel = tree->bTreeInMerge;
             //return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeLevel)), to_find);
          }
       }
