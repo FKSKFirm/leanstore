@@ -86,6 +86,7 @@ struct BTreeNodeHeader : public DataStructureIdentifier {
 struct BTreeNode : public BTreeNodeHeader {
    struct __attribute__((packed)) Slot {
       // Layout:  key wihtout prefix | Payload
+      //first bit of offset is deleted flag; this should work, because offset is smaller than 32768 = 2^15
       u16 offset;
       u16 key_len;
       u16 payload_len : 15;
@@ -93,6 +94,7 @@ struct BTreeNode : public BTreeNodeHeader {
          HeadType head;
          u8 head_bytes[4];
       };
+      u16 getOffset() {return offset&~(1 << 15);}
    };
    static constexpr u64 pure_slots_capacity = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) / (sizeof(Slot));
    static constexpr u64 left_space_to_waste = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) % (sizeof(Slot));
@@ -120,7 +122,10 @@ struct BTreeNode : public BTreeNodeHeader {
       return false;
    }
    // -------------------------------------------------------------------------------------
-   inline u8* getKey(u16 slotId) { return ptr() + slot[slotId].offset; }
+   inline bool isDeleted(u16 slotId) { return slot[slotId].offset>>15; }
+   inline void setDeletedFlag(u16 slotId) { slot[slotId].offset = slot[slotId].offset|(1<<15); }
+   inline void removeDeletedFlag(u16 slotId) { slot[slotId].offset = slot[slotId].offset&~(1<<15); }
+   inline u8* getKey(u16 slotId) { return ptr() + slot[slotId].getOffset(); }
    inline u16 getKeyLen(u16 slotId) { return slot[slotId].key_len; }
    inline u16 getFullKeyLen(u16 slotId) { return prefix_length + getKeyLen(slotId); }
    inline u16 getPayloadLength(u16 slotId) { return slot[slotId].payload_len; }
@@ -131,7 +136,7 @@ struct BTreeNode : public BTreeNodeHeader {
       space_used -= freed_space;
       slot[slotId].payload_len = len;
    }
-   inline u8* getPayload(u16 slotId) { return ptr() + slot[slotId].offset + slot[slotId].key_len; }
+   inline u8* getPayload(u16 slotId) { return ptr() + slot[slotId].getOffset() + slot[slotId].key_len; }
    inline SwipType& getChild(u16 slotId) { return *reinterpret_cast<SwipType*>(getPayload(slotId)); }
    // -------------------------------------------------------------------------------------
    inline u8* getPrefix() { return getLowerFenceKey(); }

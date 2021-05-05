@@ -101,6 +101,23 @@ s32 BTreeNode::insert(const u8* key, u16 key_len, const u8* payload, u16 payload
    storeKeyValue(slotId, key, key_len, payload, payload_length);
    count++;
    updateHint(slotId);
+
+   //Test the deletion flag for LSM Tree
+   DEBUG_BLOCK()
+   {
+      setDeletedFlag(slotId);
+      bool isd=isDeleted(slotId);
+      assert(isd);
+
+      u16 getOffner = slot->getOffset();
+
+      removeDeletedFlag(slotId);
+      isd = isDeleted(slotId);
+      assert(!isd);
+
+      assert(slot->offset == getOffner);
+   }
+
    return slotId;
    // -------------------------------------------------------------------------------------
    DEBUG_BLOCK()
@@ -239,7 +256,7 @@ void BTreeNode::copyKeyValueRange(BTreeNode* dst, u16 dstSlot, u16 srcSlot, u16 
             [[maybe_unused]] s64 off_by = reinterpret_cast<u8*>(dst->slot + dstSlot + count) - (dst->ptr() + dst->data_offset);
             assert(off_by <= 0);
          }
-         memcpy(dst->ptr() + dst->data_offset, ptr() + slot[srcSlot + i].offset, kv_size);
+         memcpy(dst->ptr() + dst->data_offset, ptr() + slot[srcSlot + i].getOffset(), kv_size);
       }
    } else {
       for (u16 i = 0; i < count; i++)
