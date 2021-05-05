@@ -40,8 +40,11 @@ void BTreeGeneric::create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifi
    // -------------------------------------------------------------------------------------
    this->meta_node_bf = meta_bf;
    this->dt_id = dtid;
+
+   // set the dsi for the root node
    ((BTreeNode*)(root_write_guard.getBufferFrame()->page.dt))->type = dsi->type;
    ((BTreeNode*)(root_write_guard.getBufferFrame()->page.dt))->level = dsi->level;
+
    HybridPageGuard<BTreeNode> meta_guard(meta_bf);
    ExclusivePageGuard meta_page(std::move(meta_guard));
    meta_page->upper = root_write_guard.getBufferFrame();  // HACK: use upper of meta node as a swip to the storage root
@@ -529,28 +532,7 @@ s64 BTreeGeneric::iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard,
    // -------------------------------------------------------------------------------------
    return res;
 }
-s64 BTreeGeneric::iterateAllPagesRecNodeGuard(HybridPageGuard<BTreeNode>& node_guard,
-                                     std::function<s64(HybridPageGuard<BTreeNode>&)> inner,
-                                     std::function<s64(HybridPageGuard<BTreeNode>&)> leaf)
-{
-   if (node_guard->is_leaf) {
-      return leaf(node_guard);
-   }
-   s64 res = inner(node_guard);
-   for (u16 i = 0; i < node_guard->count; i++) {
-      Swip<BTreeNode>& c_swip = node_guard->getChild(i);
-      auto c_guard = HybridPageGuard(node_guard, c_swip);
-      c_guard.recheck();
-      res += iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
-   }
-   // -------------------------------------------------------------------------------------
-   Swip<BTreeNode>& c_swip = node_guard->upper;
-   auto c_guard = HybridPageGuard(node_guard, c_swip);
-   c_guard.recheck();
-   res += iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
-   // -------------------------------------------------------------------------------------
-   return res;
-}
+
 s64 BTreeGeneric::releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard)
 {
    int counter = 0;
@@ -587,18 +569,6 @@ s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::fun
          HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
          HybridPageGuard c_guard(p_guard, p_guard->upper);
          s64 result = iterateAllPagesRec(c_guard, inner, leaf);
-         jumpmu_return result;
-      }
-      jumpmuCatch() {}
-   }
-}s64 BTreeGeneric::iterateAllPagesNodeGuard(std::function<s64(HybridPageGuard<BTreeNode>&)> inner, std::function<s64(HybridPageGuard<BTreeNode>&)> leaf)
-{
-   while (true) {
-      jumpmuTry()
-      {
-         HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
-         HybridPageGuard c_guard(p_guard, p_guard->upper);
-         s64 result = iterateAllPagesRecNodeGuard(c_guard, inner, leaf);
          jumpmu_return result;
       }
       jumpmuCatch() {}
@@ -646,64 +616,41 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
 }
 // -------------------------------------------------------------------------------------
 
-
-//TODO make pageGuards exclusive
 void BTreeGeneric::insertLeafNode(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
+   while  (true) {
+      // lock the meta node
+      HybridPageGuard<BTreeNode> parent_guard(meta_node_bf);
+      // ExclusivePageGuard<BTreeNode> metaNode_guard_exclusive = ExclusivePageGuard(std::move(metaNode_guard)); // exclusive guard for metaNode
+      // lock the root node
+      HybridPageGuard current_node(parent_guard, parent_guard->upper);
 
-   // lock the meta node
-   HybridPageGuard<BTreeNode> metaNode_guard(meta_node_bf);
-   //ExclusivePageGuard<BTreeNode> metaNode_guard_exclusive = ExclusivePageGuard(std::move(metaNode_guard)); // exclusive guard for metaNode
-   //lock the root node
-   HybridPageGuard root_guard(metaNode_guard, metaNode_guard->upper);
-   //ExclusivePageGuard<BTreeNode> root_guard_exclusive = ExclusivePageGuard(std::move(root_guard)); // exclusive guard for metaNode
+      // TODO: update dummy node lower fence or delete dummy node
 
-   //TODO: update dummy node lower fence
+      while (!current_node->is_leaf) {
+         // go one level deeper
+         parent_guard = std::move(current_node);
+         Swip<BTreeNode>& childToFollow = parent_guard->lookupInner(key, keyLength);
+         current_node = HybridPageGuard(parent_guard, childToFollow);
+      }
+      // we dont need the leaf node, because we want to insert in the inner node (parent_guard)
+      current_node.unlock();
 
-   //Swip<BTreeNode*> rootNode = metaNode_guard->upper;
-
-   insertLeafSorted(metaNode_guard, root_guard, key, keyLength, leaf);
-}
-
-
-void BTreeGeneric::insertLeafSorted(HybridPageGuard<BTreeNode>& parent_guard,
-                                    HybridPageGuard<BTreeNode>& current_node,
-                                    uint8_t* key, unsigned keyLength,
-                                    ExclusivePageGuard<BTreeNode>& leaf) {
-
-   //BTreeNode metaNode = ((BTreeNode*)parent_guard.bufferFrame->page.dt);
-   //BTreeNode rootNode = ((BTreeNode*)current_node.bufferFrame->page.dt);
-   //BTreeNode emptyBTreeNode = ((BTreeNode*)rootNode.upper.bf->page.dt);
-
-   if (current_node->is_leaf) {
-
-      //unsigned pageCountBefore = countPages();
       if (parent_guard->canInsert(keyLength, sizeof(BTreeNode*))) {
+         ExclusivePageGuard<BTreeNode> exclusiveParentGuard = ExclusivePageGuard(std::move(parent_guard));
          auto swip = leaf.swip();
-         parent_guard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
-         //assert(countPages() == pageCountBefore + 1);
+         exclusiveParentGuard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
+         // insert done
          return;
       }
+
       // no more space, need to split
-      //ExclusivePageGuard parent_x_guard(std::move(parent_guard));
       parent_guard.unlock();
-      //TODO: set the type in trySplit correct (in this case not in-memory-BTree !)
+
       trySplit(*parent_guard.bufferFrame);
 
       // retry insert
-      insertLeafNode(key, keyLength, leaf);
-      return;
    }
-
-   // inner node
-   Swip<BTreeNode>& childToFollow = current_node->lookupInner(key,keyLength);
-   // TODO: childGuard(parent_guard, childToFollow) or:
-   HybridPageGuard<BTreeNode> childGuard(current_node, childToFollow);
-   childGuard.recheck();
-
-   insertLeafSorted(current_node, childGuard, key, keyLength, leaf);
-
 }
-
 
 
 }  // namespace btree
