@@ -285,6 +285,7 @@ struct BTreeNode : public BTreeNodeHeader {
    bool merge(u16 slotId, ExclusivePageGuard<BTreeNode>& parent, ExclusivePageGuard<BTreeNode>& right);
    // store key/value pair at slotId
    void storeKeyValue(u16 slotId, const u8* key, u16 key_len, const u8* payload, u16 payload_len);
+   void storeKeyValueWithDeletionMarker(u16 slotId, const u8* key, u16 key_len, const u8* payload, u16 payload_len, bool deletionMarker);
    // ATTENTION: dstSlot then srcSlot !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    void copyKeyValueRange(BTreeNode* dst, u16 dstSlot, u16 srcSlot, u16 count);
    void copyKeyValue(u16 srcSlot, BTreeNode* dst, u16 dstSlot);

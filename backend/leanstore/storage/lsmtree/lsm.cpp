@@ -18,9 +18,13 @@ struct KeyValueEntry {
    unsigned keyLen;
    unsigned payloadOffset;
    unsigned payloadLen;
+   bool deletionFlag;
 };
 
 // Compare two string
+// returns a negative value when a is smaller than b
+// returns 0 when both values are the same
+// returns a value > 0 when b is the smaller value
 static int cmpKeys(uint8_t* a, uint8_t* b, unsigned aLength, unsigned bLength)
 {
    int c = memcmp(a, b, min(aLength, bLength));
@@ -45,6 +49,7 @@ struct BTreeIterator {
    }
 
    bool done() { return stack->empty(); }
+   bool getDeletionFlag() { return stack->back().first->isDeleted(stack->back().second); }
    uint8_t* getKey() { return stack->back().first->getKey(stack->back().second); }
    unsigned getKeyLen() { return stack->back().first->slot[stack->back().second].key_len; }
    uint8_t* getPayload() { return stack->back().first->getPayload(stack->back().second); }
@@ -129,9 +134,10 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
             new_node->prefix_length = commonPrefix(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen,
                                               entries->front().keyOffset + keyStorage->data(), entries->front().keyLen);
             for (unsigned i = 0; i < entries->size(); i++)
-               new_node->storeKeyValue(i,
+               new_node->storeKeyValueWithDeletionMarker(i,
                                   entries.obj[i].keyOffset + keyStorage->data(), entries.obj[i].keyLen,
-                                  entries.obj[i].payloadOffset + payloadStorage->data(), entries.obj[i].payloadLen);
+                                  entries.obj[i].payloadOffset + payloadStorage->data(), entries.obj[i].payloadLen,
+                                  entries.obj[i].deletionFlag);
             new_node->count = entries->size();
             new_node->insertFence(new_node->lower_fence, entries->back().keyOffset + keyStorage->data(),
                                   new_node->prefix_length);  // XXX: could put prefix before last key and set upperfence
@@ -328,15 +334,35 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
          bufferKey(a, keyA.obj);
          keyB->resize(0);
          bufferKey(b, keyB.obj);
-         it = cmpKeys(keyA->data(), keyB->data(), keyA->size(), keyB->size()) < 0 ? &a : &b;
-         // TODO: same entry (because of update or delete; inserting a duplicate key is a problem, should check all tiers first): take the newer one (is in aTree)
+         int compareValue = cmpKeys(keyA->data(), keyB->data(), keyA->size(), keyB->size());
+         if (compareValue == 0) {
+            //both keys have the same key; this can happen through an update or an deletion (or a duplicate insert!!!!)
+            // so TODO: avoid inserting duplicate keys
+            //keyA is the newer key (higher LSM tree tier)
+            if (a.getDeletionFlag()) {
+               // key was in fact deleted, but we need the deletion entry for further levels where the original key may occur again!
+               // only if bTree is the lowest tier of the lsm tree we can forget the deletion marker and delete the entry really :)
+               if (bTree->level == this->tiers.size()-1) {
+                  ++a;
+               }
+               //could also test the bloom filters of further levels or do a lookup if the key occurs in a lower level, then we could delete the entry as well
+            }
+            // b is in every case the older value, isnt needed anymore (regardless if its a deleted entry, an updated entry or an originally inserted entry)
+            ++b;
+            continue;
+         }
+         else {
+            it = compareValue < 0 ? &a : &b;
+            // TODO: same entry (because of update or delete; inserting a duplicate key is a problem, should check all tiers first): take the newer one (is in aTree)
+         }
       }
       unsigned keyOffset = keyStorage->end() - keyStorage->begin();
       unsigned keyLen = bufferKey(*it, keyStorage.obj);
       unsigned payloadOffset = payloadStorage->end() - payloadStorage->begin();
       unsigned payloadLen = bufferPayload(*it, payloadStorage.obj);
+      bool deletionFlag = it->getDeletionFlag();
 
-      kvEntries->push_back({keyOffset, keyLen, payloadOffset, payloadLen});
+      kvEntries->push_back({keyOffset, keyLen, payloadOffset, payloadLen, deletionFlag});
 
       uint8_t* key = keyStorage->data() + keyStorage->size() - keyLen;
       //uint8_t* payload = payloadStorage.data() + payloadStorage.size() - payloadLen;
@@ -658,6 +684,13 @@ u64 LSM::getHeight()
 // inserts a value in the In-memory Level Tree of the LSM tree and merges with lower levels if necessary
 OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 {
+   //TODO: check, that the value isnt inserted in lower levels
+   //case1: key does not occur in the LSM Tree -> normal insert
+   //case2: key occurs in the inMemBtree -> duplicate key with normal insert
+   //case3: key occurs in a lower tier -> insert would be ok!! So check the furter levels before if key occurs
+   //     case3.1: key occurs in a lower tier -> dont allow insert
+   //     case3.2: key occurs in a lower tier, but deletion marker is set in the first/newest lower tier -> could insert value again
+   //           -> lower levels with the same key may exist but arent of interest
       auto result = inMemBTree->insert(key, keyLength, payload, payloadLength);
       u64 pageCount = inMemBTree->countPages();
       if (pageCount >= baseLimit) {
@@ -716,14 +749,21 @@ OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> pay
 {
    //cout << endl << "lookup key = " << key << endl;
 
-   if (inMemBTree->lookup(key, keyLength, payload_callback) == OP_RESULT::OK)
+   OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, payload_callback);
+   if (lookupResult == OP_RESULT::OK)
       return OP_RESULT::OK;
+   else if (lookupResult == OP_RESULT::LSM_DELETED)
+      return OP_RESULT::NOT_FOUND;
 
    // optional: parallel lookup with queue
    for (unsigned i = 0; i < tiers.size(); i++) {
+      // TODO enable filter lookup again
       //if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
-      if (tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
+      lookupResult = tiers[i]->tree.lookup(key, keyLength,payload_callback);
+      if (lookupResult == OP_RESULT::OK)
          return OP_RESULT::OK;
+      else if (lookupResult == OP_RESULT::LSM_DELETED)
+         return OP_RESULT::NOT_FOUND;
    }
 
    return OP_RESULT::NOT_FOUND;
@@ -758,6 +798,7 @@ void LSM::iterateChildrenSwips(void*, BufferFrame& bufferFrame, std::function<bo
    // process last child pointer (upper pointer)
    callback(bTreeNode.upper.cast<BufferFrame>());
 }
+
 static int counterInMerge=0;
 struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
 {

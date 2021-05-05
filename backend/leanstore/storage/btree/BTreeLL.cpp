@@ -39,6 +39,11 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
          // -------------------------------------------------------------------------------------
          s16 pos = leaf->lowerBound<true>(key, key_length);
          if (pos != -1) {
+            //check if the LSM-deletion flag is set
+            if (leaf->isDeleted(pos))
+               return OP_RESULT::LSM_DELETED;
+
+            // deletion flag is not set, normal lookup
             payload_callback(leaf->getPayload(pos), leaf->getPayloadLength(pos));
             leaf.recheck();
             jumpmu_return OP_RESULT::OK;

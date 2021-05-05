@@ -231,6 +231,29 @@ void BTreeNode::storeKeyValue(u16 slotId, const u8* key, u16 key_len, const u8* 
    memcpy(getPayload(slotId), payload, payload_len);
    assert(ptr() + data_offset >= reinterpret_cast<u8*>(slot + count));
 }
+void BTreeNode::storeKeyValueWithDeletionMarker(u16 slotId, const u8* key, u16 key_len, const u8* payload, const u16 payload_len, bool deletionMarker)
+{
+   // Head
+   key += prefix_length;
+   key_len -= prefix_length;
+   // -------------------------------------------------------------------------------------
+   slot[slotId].head = head(key, key_len);
+   slot[slotId].key_len = key_len;
+   slot[slotId].payload_len = payload_len;
+   // Value
+   const u16 space = key_len + payload_len;
+   data_offset -= space;
+   space_used += space;
+   slot[slotId].offset = data_offset;
+   if (deletionMarker) {
+      setDeletedFlag(slotId);
+   }
+   // -------------------------------------------------------------------------------------
+   memcpy(getKey(slotId), key, key_len);
+   // -------------------------------------------------------------------------------------
+   memcpy(getPayload(slotId), payload, payload_len);
+   assert(ptr() + data_offset >= reinterpret_cast<u8*>(slot + count));
+}
 // -------------------------------------------------------------------------------------
 // ATTENTION: dstSlot then srcSlot !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 void BTreeNode::copyKeyValueRange(BTreeNode* dst, u16 dstSlot, u16 srcSlot, u16 count)
