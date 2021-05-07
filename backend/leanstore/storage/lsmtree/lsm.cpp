@@ -587,10 +587,7 @@ OP_RESULT LSM::remove(u8* key, u16 keyLength)
    // case4: record to delete is in the inMemTree, but there already marked as deleted -> NOT FOUND
 
    //lookup only in inMemBTree to get the LSM_DELETED entry (would be hidden in LSM::lookup)
-   OP_RESULT occursInInMemTree = this->inMemBTree->lookup(key, keyLength,[&](const u8* payload, u16 payload_length) {
-     static_cast<void>(payload_length);
-     u8& typed_payload = *const_cast<u8*>(reinterpret_cast<const u8*>(payload));
-   });
+   OP_RESULT occursInInMemTree = this->inMemBTree->lookup(key, keyLength,[&](const u8*, u16) {});
 
    if (occursInInMemTree == OP_RESULT::LSM_DELETED) {
       //case4
@@ -711,15 +708,43 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 // inserts a value in the In-memory Level Tree of the LSM tree and merges with lower levels if necessary
 OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16 payloadLength, bool deletionMarker)
 {
-   //TODO: check, that the value isnt inserted in lower levels
-   //case1: key does not occur in the hole LSM Tree -> normal insert
-   //case2: key occurs in the inMemBtree
-   //     case2.1: key is a deletion entry -> duplicate key with normal insert, but should be ok (delete deleted entry + insert new entry -> in the end an "update", but maybe with different payload length)
-   //     case2.2: non-deleted entry -> insert fails with duplicate key
-   //case3: key occurs in a lower tier -> insert would be ok!! So check the further levels before if key occurs
-   //     case3.1: key occurs in a next lower tier and not marked as deleted -> dont allow insert
-   //     case3.2: key occurs in a next lower tier, but deletion marker is set in the first/newest lower tier -> could insert value again
-   //           -> lower levels with the same key may exist but arent of interest (are deleted during merge)
+   // case1: key does not occur in the hole LSM Tree -> normal insert
+   // case2: key occurs in the inMemBtree
+   //      case2.1: key is a deletion entry -> duplicate key with normal insert, but should be ok (delete deleted entry + insert new entry -> in the end an "update", but maybe with different payload length)
+   //      case2.2: non-deleted entry -> insert fails with duplicate key
+   // case3: key occurs in a lower tier -> insert would be ok!! So check the further levels before if key occurs
+   //      case3.1: key occurs in a next lower tier and not marked as deleted -> dont allow insert
+   //      case3.2: key occurs in a next lower tier, but deletion marker is set in the first/newest lower tier -> could insert value again
+   //            -> lower levels with the same key may exist but arent of interest (are deleted during merge)
+
+   // first lookup inMemTree
+   OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, [&](const u8*, u16){});
+   if (lookupResult == OP_RESULT::OK) {
+      // case2.2
+      return OP_RESULT::DUPLICATE;
+   } else if (lookupResult == OP_RESULT::LSM_DELETED) {
+      // case2.1
+      // real delete + insert
+      inMemBTree->remove(key, keyLength);
+   } else {
+      // lookup tiers
+      // optional: parallel lookup with queue
+      for (unsigned i = 0; i < tiers.size(); i++) {
+         // TODO enable filter lookup again
+         // if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
+         lookupResult = tiers[i]->tree.lookup(key, keyLength, [&](const u8*, u16){});
+         if (lookupResult == OP_RESULT::OK) {
+            // case3.1
+            return OP_RESULT::DUPLICATE;
+         } else if (lookupResult == OP_RESULT::LSM_DELETED) {
+            // case3.2
+            break;
+         }
+      }
+   }
+   //case1 + case3.2 + case2.1
+
+
 
    auto result = inMemBTree->insertWithDeletionMarker(key, keyLength, payload, payloadLength, deletionMarker);
    u64 pageCount = inMemBTree->countPages();
@@ -774,7 +799,7 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
    return result;
 }
 
-// searches for an value
+// searches for an value in the LSM tree, returns OK or NOT_FOUND (hides LSM_DELETED)
 OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> payload_callback)
 {
    //case1: key found in inMemTree
