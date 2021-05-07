@@ -84,6 +84,7 @@ int main(int argc, char** argv)
       // -------------------------------------------------------------------------------------
       double gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
       cout << "data loaded - consumed space in GiB = " << gib << endl;
+      //TODO: this countPages() failes when inserted 1 Mio entries. Why?
       cout << "Test pages = " << test.keyValueDataStore->countPages() << endl;
       // -------------------------------------------------------------------------------------
       // read data
