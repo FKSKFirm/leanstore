@@ -70,6 +70,7 @@ struct LSM : public KeyValueInterface {
    u64 countEntries() override;
    u64 getHeight() override;
    OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
+   OP_RESULT insertWithDeletionMarker(u8* key, u16 key_length, u8* value, u16 value_length, bool deletionMarker);
    OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
 
    static ParentSwipHandler findParent(void* btree_object, BufferFrame& to_find);

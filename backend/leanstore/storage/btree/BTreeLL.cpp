@@ -116,12 +116,20 @@ OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(co
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_length)
 {
+   return insertWithDeletionMarker(o_key, o_key_length, o_value, o_value_length, false);
+}
+// -------------------------------------------------------------------------------------
+OP_RESULT BTreeLL::insertWithDeletionMarker(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_length, bool deletionMarker)
+{
    Slice key(o_key, o_key_length);
    Slice value(o_value, o_value_length);
    jumpmuTry()
    {
       BTreeExclusiveIterator iterator(*static_cast<BTreeGeneric*>(this));
       auto ret = iterator.insertKV(key, value);
+      if (deletionMarker) {
+
+      }
       ensure(ret == OP_RESULT::OK);
       iterator.leaf.incrementGSN();
       jumpmu_return OP_RESULT::OK;
@@ -164,6 +172,23 @@ OP_RESULT BTreeLL::remove(u8* o_key, u16 o_key_length)
       ret = iterator.removeCurrent();
       ensure(ret == OP_RESULT::OK);
       iterator.mergeIfNeeded();
+      jumpmu_return OP_RESULT::OK;
+   }
+   jumpmuCatch() { ensure(false); }
+}
+// -------------------------------------------------------------------------------------
+OP_RESULT BTreeLL::removeWithDeletionMarker(u8* o_key, u16 o_key_length)
+{
+   Slice key(o_key, o_key_length);
+   jumpmuTry()
+   {
+      BTreeExclusiveIterator iterator(*static_cast<BTreeGeneric*>(this));
+      auto ret = iterator.seekExact(key);
+      if (ret != OP_RESULT::OK) {
+         jumpmu_return ret;
+      }
+      iterator.leaf.incrementGSN();
+      iterator.leaf->setDeletedFlag(iterator.getSlot());
       jumpmu_return OP_RESULT::OK;
    }
    jumpmuCatch() { ensure(false); }

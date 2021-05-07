@@ -353,7 +353,6 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
          }
          else {
             it = compareValue < 0 ? &a : &b;
-            // TODO: same entry (because of update or delete; inserting a duplicate key is a problem, should check all tiers first): take the newer one (is in aTree)
          }
       }
       unsigned keyOffset = keyStorage->end() - keyStorage->begin();
@@ -525,12 +524,18 @@ OP_RESULT LSM::updateSameSize(u8* key, u16 keyLength, function<void(u8* payload,
    u8* keyPayload;
    u16 keyPayloadLength;
 
-   // TODO: new updateSameSize in adapter, because with a callback function we need to find the the previous payload first OR
+   // TODO: maybe a new updateSameSize in adapter?, because with a callback function we need to find the the previous payload first OR
    // Workaround: save the key, keylength, and changed values (with position and length) and resolve it during merge and during scan/select (difficult!)
 
-   // case1: record to update is already in the inMemTree (because of insert or earlier update) (and maybe also in trees below) -> insert would result in Duplicate Key
-   // case2: record is in a tree below -> could insert in inMemTree and has to be resolved during merge, select would only pick the first occurrence in the LSMtree
+   // case1: record to update is already in the inMemTree
+   //      case1.1: record is marked as deleted -> NOT FOUND
+   //      case1.2: normal record (because of insert or earlier update) -> updateSameSize
+   // case2: record is in tree(s) below
+   //      case2.1: newest record is marked a deleted -> NOT FOUND
+   //      case2.2: newest record is not marked as deleted -> insert new record in inMemTree
+   // case3: record not found -> NOT FOUND
 
+   //search only the inMemTree to get the information when the entry is marked as deleted
    OP_RESULT occursInInMemTree = this->inMemBTree->lookup(key, keyLength,[&](const u8* payload, u16 payload_length) {
      static_cast<void>(payload_length);
      u8& typed_payload = *const_cast<u8*>(reinterpret_cast<const u8*>(payload));
@@ -539,62 +544,79 @@ OP_RESULT LSM::updateSameSize(u8* key, u16 keyLength, function<void(u8* payload,
    });
 
    if(occursInInMemTree == OP_RESULT::OK) {
-      //case1
+      //case1.2
       //therefore do traditional update in the inMemBTree
-      return this->inMemBTree->updateSameSize(key,keyLength,callback);
+      return this->inMemBTree->updateSameSize(key, keyLength, callback);
+   }
+   else if (occursInInMemTree == OP_RESULT::LSM_DELETED) {
+      //case1.1
+      return OP_RESULT::NOT_FOUND;
    }
    else {
-      //case2
-      //first: find the old entry/payload
+      //case2 + case3
+      //lookup in complete LSM Tree (LSM_DELETED is hidden, we get only OK or NOT_FOUND)
       OP_RESULT occursInLSMTree = LSM::lookup(key, keyLength,[&](const u8* payload, u16 payload_length) {
         static_cast<void>(payload_length);
         u8& typed_payload = *const_cast<u8*>(reinterpret_cast<const u8*>(payload));
         keyPayload = &typed_payload;
         keyPayloadLength = payload_length;
       });
-      //key should be found in one of the LSMTree levels
-      assert(occursInLSMTree == OP_RESULT::OK);
 
-      //second: update the values through the callback function
-      callback(keyPayload, keyPayloadLength);
+      if (occursInLSMTree == OP_RESULT::NOT_FOUND) {
+         //case2.1 + case3
+         return OP_RESULT::NOT_FOUND;
+      }
+      else {
+         //case2.2
+         //second: update the values through the callback function
+         callback(keyPayload, keyPayloadLength);
 
-      //third: insert the updated values in the LSMTree (respectively InMemBTree)
-      return LSM::insert(key, keyLength, keyPayload, keyPayloadLength);
+         //third: insert the updated values in the LSMTree (respectively InMemBTree)
+         return LSM::insert(key, keyLength, keyPayload, keyPayloadLength);
+      }
    }
 }
 
 OP_RESULT LSM::remove(u8* key, u16 keyLength)
 {
-   // case1: record to delete is only in the inMemTree (because of insert or earlier update) -> would result in Duplicate Key inMemTree, could be solved with a traditional delete
-   // case2: record to delete is in the inMemTree and in further levels (because of insert or earlier update) -> would result in Duplicate Key in the inMemTree, traditional delete & insert of deletion-marker (as marker to delete during merge)
-   // case3: record is in a tree below -> could insert in inMemTree and has to be resolved during merge
+   // case1: record to delete is only in the inMemTree (because of insert or earlier update) -> would result in Duplicate Key inMemTree, could be solved with a traditional delete or with a deletion-marker
+   // case2: record to delete is in the inMemTree and in further levels (because of insert or earlier update) -> would result in Duplicate Key in the inMemTree -> update entry with deletion-marker
+   // case3: record is only in a tree below
+   //      case3.1: newest record in the tiers is marked as deleted -> NOT FOUND
+   //      case3.2: newest record in the tiers is a normal entry -> insert deletionMarker in inMemTree
+   // case4: record to delete is in the inMemTree, but there already marked as deleted -> NOT FOUND
 
+   //lookup only in inMemBTree to get the LSM_DELETED entry (would be hidden in LSM::lookup)
    OP_RESULT occursInInMemTree = this->inMemBTree->lookup(key, keyLength,[&](const u8* payload, u16 payload_length) {
      static_cast<void>(payload_length);
      u8& typed_payload = *const_cast<u8*>(reinterpret_cast<const u8*>(payload));
    });
 
-   if (occursInInMemTree == OP_RESULT::NOT_FOUND) {
+   if (occursInInMemTree == OP_RESULT::LSM_DELETED) {
+      //case4
+      return OP_RESULT::NOT_FOUND;
+   }
+   else if (occursInInMemTree == OP_RESULT::NOT_FOUND) {
       //case3
-      //insert the key with NULL as deletion marker
-      return insert(key, keyLength, nullptr,NULL);
+      //insert the key with deletion marker without any payload
+
+      // lookup in complete LSM Tree (LSM_DELETED is hidden, we get only OK or NOT_FOUND)
+      if (this->lookup(key, keyLength, [&](const u8* payload, u16 payload_length){}) == OP_RESULT::OK) {
+         // occurs in one level below and is not deleted yet
+         return insertWithDeletionMarker(key, keyLength, nullptr, NULL, true);
+      }
+      else {
+         // not found in lower levels or even marked as deleted in a lower level
+         return OP_RESULT::NOT_FOUND;
+      }
    }
    else {
-      //case1 or case2
-      //instead of differentiating between these two cases we delete the old value and inserting the deletion marker
+      //case1 or case2, occurs in InMemTree
+      //instead of differentiating between these two cases we simply set the deletion marker
 
-      //delete the old value in the inMemBTree
-      this->inMemBTree->remove(key, keyLength);
-      //could exit here in case1
-
-      //insert deletion marker
-      return insert(key, keyLength,NULL,NULL);
+      //set the deletion marker for the entry in the inMemBTree
+      return this->inMemBTree->removeWithDeletionMarker(key, keyLength);
    }
-
-
-   return insert(key, keyLength,NULL,NULL);
-   //TODO: Add DELETE-entry in LSM Tree and remove the entry during merge
-   // is NULL safe as Deletion marker?
 }
 
 OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
@@ -681,72 +703,87 @@ u64 LSM::getHeight()
    return this->tiers.size();
 }
 
-// inserts a value in the In-memory Level Tree of the LSM tree and merges with lower levels if necessary
 OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 {
+   return insertWithDeletionMarker(key, keyLength, payload, payloadLength, false);
+}
+
+// inserts a value in the In-memory Level Tree of the LSM tree and merges with lower levels if necessary
+OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16 payloadLength, bool deletionMarker)
+{
    //TODO: check, that the value isnt inserted in lower levels
-   //case1: key does not occur in the LSM Tree -> normal insert
-   //case2: key occurs in the inMemBtree -> duplicate key with normal insert
-   //case3: key occurs in a lower tier -> insert would be ok!! So check the furter levels before if key occurs
-   //     case3.1: key occurs in a lower tier -> dont allow insert
-   //     case3.2: key occurs in a lower tier, but deletion marker is set in the first/newest lower tier -> could insert value again
-   //           -> lower levels with the same key may exist but arent of interest
-      auto result = inMemBTree->insert(key, keyLength, payload, payloadLength);
-      u64 pageCount = inMemBTree->countPages();
-      if (pageCount >= baseLimit) {
-         // merge inMemory-BTree with first level BTree of LSM Tree
-         this->inMerge = true;
-         this->levelInMerge = 0;
+   //case1: key does not occur in the hole LSM Tree -> normal insert
+   //case2: key occurs in the inMemBtree
+   //     case2.1: key is a deletion entry -> duplicate key with normal insert, but should be ok (delete deleted entry + insert new entry -> in the end an "update", but maybe with different payload length)
+   //     case2.2: non-deleted entry -> insert fails with duplicate key
+   //case3: key occurs in a lower tier -> insert would be ok!! So check the further levels before if key occurs
+   //     case3.1: key occurs in a next lower tier and not marked as deleted -> dont allow insert
+   //     case3.2: key occurs in a next lower tier, but deletion marker is set in the first/newest lower tier -> could insert value again
+   //           -> lower levels with the same key may exist but arent of interest (are deleted during merge)
 
-         // init pageGuard to the metaNode
-         HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
-         // p_guard->upper is the root node, rootPageGuard.bufferFrame is set to the root node
-         HybridPageGuard<btree::BTreeNode> rootPageGuard = HybridPageGuard<btree::BTreeNode>(p_guard, p_guard->upper);
+   auto result = inMemBTree->insertWithDeletionMarker(key, keyLength, payload, payloadLength, deletionMarker);
+   u64 pageCount = inMemBTree->countPages();
+   if (pageCount >= baseLimit) {
+      // merge inMemory-BTree with first level BTree of LSM Tree
+      this->inMerge = true;
+      this->levelInMerge = 0;
 
-         // get the root node of the btree of level 0, if the level exists
-         btree::BTreeNode* old = tiers.size() ? (btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt : nullptr;
+      // init pageGuard to the metaNode
+      HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
+      // p_guard->upper is the root node, rootPageGuard.bufferFrame is set to the root node
+      HybridPageGuard<btree::BTreeNode> rootPageGuard = HybridPageGuard<btree::BTreeNode>(p_guard, p_guard->upper);
 
-         // merge the two trees / pull the in-mem-tree down (if only in-mem-tree exists)
-         unique_ptr<StaticBTree> neu;
-         if (old != nullptr) {
-            this->bTreeInMerge = &tiers[0]->tree;
-            HybridPageGuard<btree::BTreeNode> old_guard(tiers[0]->tree.meta_node_bf);
-            HybridPageGuard<btree::BTreeNode> old_RootPageGuard = HybridPageGuard<btree::BTreeNode>(old_guard, old_guard->upper);
-            tiers[0] = mergeTrees(&rootPageGuard, &old_RootPageGuard);
+      // get the root node of the btree of level 0, if the level exists
+      btree::BTreeNode* old = tiers.size() ? (btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt : nullptr;
 
-            //release meta nodes after merge
-            ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
-            ExclusivePageGuard<btree::BTreeNode> tier0MetaNode_x_guard(std::move(old_guard));
-            inMemMetaNode_x_guard.reclaim();
-            tier0MetaNode_x_guard.reclaim();
-         }
-         else {
-            tiers.emplace_back(move(mergeTrees(&rootPageGuard, nullptr)));
+      // merge the two trees / pull the in-mem-tree down (if only in-mem-tree exists)
+      unique_ptr<StaticBTree> neu;
+      if (old != nullptr) {
+         this->bTreeInMerge = &tiers[0]->tree;
+         HybridPageGuard<btree::BTreeNode> old_guard(tiers[0]->tree.meta_node_bf);
+         HybridPageGuard<btree::BTreeNode> old_RootPageGuard = HybridPageGuard<btree::BTreeNode>(old_guard, old_guard->upper);
+         tiers[0] = mergeTrees(&rootPageGuard, &old_RootPageGuard);
 
-            //release the meta node after merge
-            ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
-            inMemMetaNode_x_guard.reclaim();
-         }
-         //cout << "mergeTrees() in insert, lower fence von neu: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getLowerFenceKey() << " upper fence: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getUpperFenceKey() << endl;
-
-         ensure(tiers[0]->tree.type == LSM_TYPE::BTree);
-         ensure(tiers[0]->filter.type == LSM_TYPE::BloomFilter);
-         ensure(tiers[0]->tree.level == 0);
-         ensure(tiers[0]->filter.level == 0);
-
-         // generate new empty inMemory BTree
-         this->create(this->dt_id, this->meta_node_bf);
-
-         // if necessary merge further levels
-         mergeAll();
-         this->inMerge = false;
+         //release meta nodes after merge
+         ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
+         ExclusivePageGuard<btree::BTreeNode> tier0MetaNode_x_guard(std::move(old_guard));
+         inMemMetaNode_x_guard.reclaim();
+         tier0MetaNode_x_guard.reclaim();
       }
-      return result;
+      else {
+         tiers.emplace_back(move(mergeTrees(&rootPageGuard, nullptr)));
+
+         //release the meta node after merge
+         ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
+         inMemMetaNode_x_guard.reclaim();
+      }
+      //cout << "mergeTrees() in insert, lower fence von neu: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getLowerFenceKey() << " upper fence: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getUpperFenceKey() << endl;
+
+      ensure(tiers[0]->tree.type == LSM_TYPE::BTree);
+      ensure(tiers[0]->filter.type == LSM_TYPE::BloomFilter);
+      ensure(tiers[0]->tree.level == 0);
+      ensure(tiers[0]->filter.level == 0);
+
+      // generate new empty inMemory BTree
+      this->create(this->dt_id, this->meta_node_bf);
+
+      // if necessary merge further levels
+      mergeAll();
+      this->inMerge = false;
+   }
+   return result;
 }
 
 // searches for an value
 OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> payload_callback)
 {
+   //case1: key found in inMemTree
+   //     case1.1: with deletion marker -> Not found
+   //     case1.2: normal entry -> OK
+   //case2: not found in inMemTree, search further levels
+   //     case2.1: found in one of the further levels with deletion marker -> Not found
+   //     case2.2: found in one of the further levels -> OK
+
    //cout << endl << "lookup key = " << key << endl;
 
    OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, payload_callback);

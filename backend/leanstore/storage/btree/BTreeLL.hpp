@@ -24,8 +24,10 @@ class BTreeLL : public KeyValueInterface, public BTreeGeneric, public DataStruct
   public:
    virtual OP_RESULT lookup(u8* key, u16 key_length, function<void(const u8*, u16)> payload_callback) override;
    virtual OP_RESULT insert(u8* key, u16 key_length, u8* value, u16 value_length) override;
+   virtual OP_RESULT insertWithDeletionMarker(u8* key, u16 key_length, u8* value, u16 value_length, bool deletionMarker);
    virtual OP_RESULT updateSameSize(u8* key, u16 key_length, function<void(u8* value, u16 value_size)>) override;
    virtual OP_RESULT remove(u8* key, u16 key_length) override;
+   virtual OP_RESULT removeWithDeletionMarker(u8* key, u16 key_length);
    virtual OP_RESULT scanAsc(u8* start_key,
                              u16 key_length,
                              function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)>) override;

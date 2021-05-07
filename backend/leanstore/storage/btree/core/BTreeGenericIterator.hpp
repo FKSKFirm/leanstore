@@ -169,6 +169,7 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
    virtual Slice keyPrefix() override { return Slice(leaf->getPrefix(), leaf->prefix_length); }
    virtual Slice keyWithoutPrefix() override { return Slice(leaf->getKey(cur), leaf->getKeyLen(cur)); }
    virtual u16 valueLength() { return leaf->getPayloadLength(cur); }
+   virtual u16 getSlot() { return cur; }
    virtual Slice value() override { return Slice(leaf->getPayload(cur), leaf->getPayloadLength(cur)); }
 };  // namespace btree
 // -------------------------------------------------------------------------------------
@@ -202,9 +203,13 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
    }
    virtual void insertInCurrentNode(Slice key, Slice value)
    {
+      insertInCurrentNodeWithDeletionMarker(key, value, false);
+   }
+   virtual void insertInCurrentNodeWithDeletionMarker(Slice key, Slice value, bool deletionMarker)
+   {
       assert(keyFitsInCurrentNode(key));
       assert(canInsertInCurrentNode(key, value.length()) == OP_RESULT::OK);
-      cur = leaf->insert(key.data(), key.length(), value.data(), value.length());
+      cur = leaf->insertWithDeletionMarker(key.data(), key.length(), value.data(), value.length(), deletionMarker);
    }
    virtual bool keyFitsInCurrentNode(Slice key) { return leaf->compareKeyWithBoundaries(key.data(), key.length()) == 0; }
    virtual void splitForKey(Slice key)
