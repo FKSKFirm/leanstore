@@ -1,11 +1,12 @@
 /* ***************** Own Test begin ************************** */
+#define test_t_size 100
 struct test_t {
    static constexpr int id = 0;
    struct Key {
       static constexpr int id = 0;
       Integer w_id;
    };
-   Varchar<100> t_text;
+   Varchar<test_t_size> t_text;
    // -------------------------------------------------------------------------------------
    template <class T>
    static unsigned foldRecord(uint8_t* out, const T& record)

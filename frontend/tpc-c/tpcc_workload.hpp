@@ -860,7 +860,7 @@ int tx(Integer w_id)
 int test_tx(Integer w_id)
 {
    Integer idFromRecord = 0;
-   Varchar<100> textFromRecord;
+   Varchar<test_t_size> textFromRecord;
 
 
    if (urand(1, 100) <= 40) {
