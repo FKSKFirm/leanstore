@@ -110,17 +110,15 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    //Test the deletion flag for LSM Tree
    DEBUG_BLOCK()
    {
+      u16 beforeOffset = slot[slotId].offset;
       setDeletedFlag(slotId);
-      bool isd=isDeleted(slotId);
+      bool isd = isDeleted(slotId);
       assert(isd);
 
-      u16 getOffner = slot->getOffset();
+      slot[slotId].offset = beforeOffset;
 
-      removeDeletedFlag(slotId);
       isd = isDeleted(slotId);
       assert(!isd);
-
-      assert(slot->offset == getOffner);
    }
 
    return slotId;
@@ -284,7 +282,7 @@ void BTreeNode::copyKeyValueRange(BTreeNode* dst, u16 dstSlot, u16 srcSlot, u16 
             [[maybe_unused]] s64 off_by = reinterpret_cast<u8*>(dst->slot + dstSlot + count) - (dst->ptr() + dst->data_offset);
             assert(off_by <= 0);
          }
-         memcpy(dst->ptr() + dst->data_offset, ptr() + slot[srcSlot + i].getOffset(), kv_size);
+         memcpy(dst->ptr() + dst->data_offset, ptr() + slot[srcSlot + i].offset, kv_size);
       }
    } else {
       for (u16 i = 0; i < count; i++)
