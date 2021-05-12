@@ -28,6 +28,7 @@ class BTreeGeneric
    // -------------------------------------------------------------------------------------
    BufferFrame* meta_node_bf;  // kept in memory
    atomic<u64> height = 1;
+   atomic<u64> pageCount = 1;
    DTID dt_id;
    // -------------------------------------------------------------------------------------
    BTreeGeneric();
