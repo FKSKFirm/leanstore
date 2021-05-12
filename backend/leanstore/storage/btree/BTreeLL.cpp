@@ -126,10 +126,7 @@ OP_RESULT BTreeLL::insertWithDeletionMarker(u8* o_key, u16 o_key_length, u8* o_v
    jumpmuTry()
    {
       BTreeExclusiveIterator iterator(*static_cast<BTreeGeneric*>(this));
-      auto ret = iterator.insertKV(key, value);
-      if (deletionMarker) {
-
-      }
+      auto ret = iterator.insertKVWithDeletionMarker(key, value, deletionMarker);
       ensure(ret == OP_RESULT::OK);
       iterator.leaf.incrementGSN();
       jumpmu_return OP_RESULT::OK;
