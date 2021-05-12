@@ -86,14 +86,21 @@ struct BTreeNodeHeader : public DataStructureIdentifier {
 struct BTreeNode : public BTreeNodeHeader {
    struct __attribute__((packed)) Slot {
       // Layout:  key wihtout prefix | Payload
-      //first bit of offset is deleted flag; this should work, because offset is smaller than 32768 = 2^15
       u16 offset;
       u16 key_len;
-      u16 payload_len : 15;
+      u16 payload_len;
       union {
          HeadType head;
          u8 head_bytes[4];
       };
+      u16 getPayloadLength() {
+         if (payload_len == std::numeric_limits<uint16_t>::max()) {
+            return 0;
+         }
+         else {
+            return payload_len;
+         }
+      }
    };
    static constexpr u64 pure_slots_capacity = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) / (sizeof(Slot));
    static constexpr u64 left_space_to_waste = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) % (sizeof(Slot));
@@ -121,15 +128,18 @@ struct BTreeNode : public BTreeNodeHeader {
       return false;
    }
    // -------------------------------------------------------------------------------------
-   inline bool isDeleted(u16 slotId) { return !slot[slotId].offset; }
-   inline void setDeletedFlag(u16 slotId) { slot[slotId].offset = 0; }
+   inline bool isDeleted(u16 slotId) { return slot[slotId].payload_len == std::numeric_limits<uint16_t>::max(); }
+   inline void setDeletedFlag(u16 slotId) { slot[slotId].payload_len = std::numeric_limits<uint16_t>::max(); }
    inline u8* getKey(u16 slotId) { return ptr() + slot[slotId].offset; }
    inline u16 getKeyLen(u16 slotId) { return slot[slotId].key_len; }
    inline u16 getFullKeyLen(u16 slotId) { return prefix_length + getKeyLen(slotId); }
-   inline u16 getPayloadLength(u16 slotId) { return slot[slotId].payload_len; }
+   inline u16 getPayloadLength(u16 slotId) { return slot[slotId].getPayloadLength(); }
    inline void shortenPayload(u16 slotId, u16 len)
    {
-      assert(len < slot[slotId].payload_len);
+      assert(len < slot[slotId].getPayloadLength());
+      if(isDeleted(slotId)) {
+         return;
+      }
       const u16 freed_space = slot[slotId].payload_len - len;
       space_used -= freed_space;
       slot[slotId].payload_len = len;

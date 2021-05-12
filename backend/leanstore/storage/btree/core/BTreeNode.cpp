@@ -110,12 +110,13 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    //Test the deletion flag for LSM Tree
    DEBUG_BLOCK()
    {
-      u16 beforeOffset = slot[slotId].offset;
+      u16 beforePayloadLength = slot[slotId].payload_len;
       setDeletedFlag(slotId);
       bool isd = isDeleted(slotId);
       assert(isd);
+      assert(slot[slotId].payload_len == std::numeric_limits<uint16_t>::max());
 
-      slot[slotId].offset = beforeOffset;
+      slot[slotId].payload_len = beforePayloadLength;
 
       isd = isDeleted(slotId);
       assert(!isd);
@@ -236,25 +237,27 @@ void BTreeNode::storeKeyValue(u16 slotId, const u8* key, u16 key_len, const u8* 
 }
 void BTreeNode::storeKeyValueWithDeletionMarker(u16 slotId, const u8* key, u16 key_len, const u8* payload, const u16 payload_len, bool deletionMarker)
 {
+   u16 payloadLength = payload_len;
+   if(deletionMarker) {
+      payloadLength = std::numeric_limits<uint16_t>::max();
+   }
+
    // Head
    key += prefix_length;
    key_len -= prefix_length;
    // -------------------------------------------------------------------------------------
    slot[slotId].head = head(key, key_len);
    slot[slotId].key_len = key_len;
-   slot[slotId].payload_len = payload_len;
+   slot[slotId].payload_len = payloadLength;
    // Value
-   const u16 space = key_len + payload_len;
+   const u16 space = key_len + payloadLength;
    data_offset -= space;
    space_used += space;
    slot[slotId].offset = data_offset;
-   if (deletionMarker) {
-      setDeletedFlag(slotId);
-   }
    // -------------------------------------------------------------------------------------
    memcpy(getKey(slotId), key, key_len);
    // -------------------------------------------------------------------------------------
-   memcpy(getPayload(slotId), payload, payload_len);
+   memcpy(getPayload(slotId), payload, payloadLength);
    assert(ptr() + data_offset >= reinterpret_cast<u8*>(slot + count));
 }
 // -------------------------------------------------------------------------------------
