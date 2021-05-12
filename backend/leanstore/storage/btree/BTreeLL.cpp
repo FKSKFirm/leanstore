@@ -185,7 +185,12 @@ OP_RESULT BTreeLL::removeWithDeletionMarker(u8* o_key, u16 o_key_length)
          jumpmu_return ret;
       }
       iterator.leaf.incrementGSN();
+      // since the deletionFlag "forgets" the payload (getPayloadLength() returns 0), we need to update the space_used of the node
+      iterator.leaf->space_used -= iterator.leaf->getPayloadLength(iterator.cur);
+      // now we can set the deletionFlag/payload to u16 maxValue
       iterator.leaf->setDeletedFlag(iterator.getSlot());
+      // maybe the node is under full (size shrunk through payload "delete")
+      iterator.mergeIfNeeded();
       jumpmu_return OP_RESULT::OK;
    }
    jumpmuCatch() { ensure(false); }

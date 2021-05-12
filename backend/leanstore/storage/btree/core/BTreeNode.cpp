@@ -238,8 +238,10 @@ void BTreeNode::storeKeyValue(u16 slotId, const u8* key, u16 key_len, const u8* 
 void BTreeNode::storeKeyValueWithDeletionMarker(u16 slotId, const u8* key, u16 key_len, const u8* payload, const u16 payload_len, bool deletionMarker)
 {
    u16 payloadLength = payload_len;
-   if(deletionMarker) {
-      payloadLength = std::numeric_limits<uint16_t>::max();
+   
+   // if deleted, change the payload length to zero (needed for space calculation of data_offset and space_used for the node)
+   if (deletionMarker) {
+      payloadLength = 0;
    }
 
    // Head
@@ -258,6 +260,11 @@ void BTreeNode::storeKeyValueWithDeletionMarker(u16 slotId, const u8* key, u16 k
    memcpy(getKey(slotId), key, key_len);
    // -------------------------------------------------------------------------------------
    memcpy(getPayload(slotId), payload, payloadLength);
+
+   // if deleted, set the deletion marker (from zero to u16 maxValue)
+   if (deletionMarker) {
+      setDeletedFlag(slotId);
+   }
    assert(ptr() + data_offset >= reinterpret_cast<u8*>(slot + count));
 }
 // -------------------------------------------------------------------------------------
