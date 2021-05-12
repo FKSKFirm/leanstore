@@ -230,6 +230,26 @@ class BTreeExclusiveIterator : public BTreePessimisticIterator<LATCH_FALLBACK_MO
          jumpmuCatch() {}
       }
    }
+   virtual OP_RESULT insertKVWithDeletionMarker(Slice key, Slice value, bool deletionMarker)
+   {
+      OP_RESULT ret;
+   restart : {
+      ret = seekToInsert(key);
+      if (ret != OP_RESULT::OK) {
+         return ret;
+      }
+      ret = canInsertInCurrentNode(key, value.length());
+      if (ret == OP_RESULT::NOT_ENOUGH_SPACE) {
+         splitForKey(key);
+         goto restart;
+      } else if (ret == OP_RESULT::OK) {
+         insertInCurrentNodeWithDeletionMarker(key, value, deletionMarker);
+         return OP_RESULT::OK;
+      } else {
+         return ret;
+      }
+   }
+   }
    virtual OP_RESULT insertKV(Slice key, Slice value)
    {
       OP_RESULT ret;
