@@ -216,21 +216,6 @@ storage::lsmTree::LSM& LeanStore::registerLsmTree(string name)
    return lsmTree;
 }
 
-// TODO -------------------------------------------------------------------------------------
-//storage::lsmtree::LSMTree& LeanStore::registerLSMTree(string name)
-//{
-//   assert(lsmTrees.find(name) == lsmTrees.end());
-//   auto& lsmTree = lsmTrees[name];
-//   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&lsmTree), name);
-//   auto& bf = buffer_manager->allocatePage();
-//   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
-//   bf.header.keep_in_memory = true;
-//   bf.page.dt_id = dtid;
-//   guard.unlock();
-//   lsmTree.create(dtid, &bf);
-//   return lsmTree;
-//}
-
 // -------------------------------------------------------------------------------------
 u64 LeanStore::getConfigHash()
 {
