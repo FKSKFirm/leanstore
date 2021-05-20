@@ -117,6 +117,7 @@ class BTreeGeneric
    void create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifier* dsi);
 
    void insertLeafNode(uint8_t* key, unsigned int keyLength, ExclusivePageGuard<BTreeNode>& leaf);
+   void insertLeafNodeNew(uint8_t* key, unsigned int keyLength, ExclusivePageGuard<BTreeNode>& leaf);
 };
 // -------------------------------------------------------------------------------------
 }  // namespace btree

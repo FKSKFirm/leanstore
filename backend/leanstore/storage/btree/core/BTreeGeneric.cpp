@@ -112,6 +112,9 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       c_x_guard->split(new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
       // -------------------------------------------------------------------------------------
       height++;
+      //cout << "Splitted Root new root: " << new_root.getBufferFrame() << endl;
+      //cout << "Splitted Root new left node: " << new_left_node.getBufferFrame() << endl;
+      //cout << "Splitted Root new right node: " << c_x_guard.getBufferFrame() << endl;
       this->pageCount = this->pageCount + 2;
       return;
    } else {
@@ -143,6 +146,9 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          // -------------------------------------------------------------------------------------
          exec();
          this->pageCount++;
+         //cout << "Splitted Inner node" << endl;
+         //cout << "Splitted inner node new left node: " << new_left_node.getBufferFrame() << endl;
+         //cout << "Splitted inner node new right node: " << c_x_guard.getBufferFrame() << endl;
       } else {
          p_guard.unlock();
          c_guard.unlock();
@@ -549,7 +555,7 @@ s64 BTreeGeneric::iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard,
 
 s64 BTreeGeneric::releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard)
 {
-   int counter = 0;
+   s64 counter = 0;
    // if its a leaf node release it
    if (node_guard->is_leaf) {
       auto x_guard = ExclusivePageGuard(std::move(node_guard));
@@ -576,6 +582,7 @@ s64 BTreeGeneric::releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard)
    x_guard.reclaim();
    return counter+1;
 }
+
 // -------------------------------------------------------------------------------------
 s64 BTreeGeneric::iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf)
 {
@@ -673,6 +680,64 @@ void BTreeGeneric::insertLeafNode(uint8_t* key, unsigned keyLength, ExclusivePag
          parent_guard.unlock();
 
          trySplit(*parent_guard.bufferFrame);
+      }
+      jumpmuCatch() {}
+      // retry insert
+   }
+}
+void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
+   while  (true) {
+      jumpmuTry() {
+         // lock the meta node
+         HybridPageGuard<BTreeNode> parent_guard(meta_node_bf);
+         // lock the root node
+         HybridPageGuard current_node(parent_guard, parent_guard->upper);
+
+         unsigned long currentHeight = 2; //rootNode (innernode) + one level of leaf node respectively the upper ptr to the old root node of this level (previously only the dummy node)
+         // can therfore insert in currentNode (which is the rootnode and the deepest innernode)
+
+         while (this->height != currentHeight) {
+            parent_guard = std::move(current_node);
+            Swip<BTreeNode>& childToFollow = parent_guard->lookupInner(key, keyLength);
+            current_node = HybridPageGuard(parent_guard, childToFollow);
+            currentHeight++;
+         }
+
+         parent_guard.unlock();
+
+         if (current_node->canInsert(keyLength, sizeof(BTreeNode*))) {
+            ExclusivePageGuard<BTreeNode> exclusiveInnerNodeGuard = ExclusivePageGuard(std::move(current_node));
+            auto swip = leaf.swip();
+
+/*
+            BTreeNode::SeparatorInfo sep_info;
+            sep_info = exclusiveInnerNodeGuard->findSep();
+            u8 sep_key[sep_info.length];
+            const u16 space_needed_for_separator = exclusiveInnerNodeGuard->spaceNeeded(sep_info.length, sizeof(SwipType));
+            if (exclusiveInnerNodeGuard->hasEnoughSpaceFor(space_needed_for_separator)) {  // Is there enough space in the parent
+               // for the separator?
+               exclusiveInnerNodeGuard->requestSpaceFor(space_needed_for_separator);
+               exclusiveInnerNodeGuard->getSep(sep_key, sep_info);
+
+               nodeLeft->setFences(getLowerFenceKey(), lower_fence.length, sepKey, sepLength);
+               leaf->setFences(sep_key, sep_info.length, getUpperFenceKey(), upper_fence.length);
+               exclusiveInnerNodeGuard->insert(sep_key, sep_info.length, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
+            }
+
+
+            exclusiveInnerNodeGuard.ptr().set
+*/
+
+            exclusiveInnerNodeGuard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
+            // insert done
+            this->pageCount++;
+            jumpmu_return;
+         }
+
+         // no more space, need to split
+         current_node.unlock();
+
+         trySplit(*current_node.bufferFrame);
       }
       jumpmuCatch() {}
       // retry insert
