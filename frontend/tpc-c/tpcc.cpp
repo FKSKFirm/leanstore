@@ -60,7 +60,7 @@ int main(int argc, char** argv)
    LeanStore db;
    auto& crm = db.getCRManager();
 
-   /* ********************* Own Test begin ****************
+   /* ********************* Own Test begin ****************/
    test = LeanStoreAdapter<test_t>(db, "own_test");
 
    uint64_t zaehler = ITEMS_NO; //100k
@@ -73,9 +73,16 @@ int main(int argc, char** argv)
             i_data = i_data || Varchar<10>("ORIGINAL");
             //cout << "Test Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
          }
-         test.insert({i}, {i_data});
+         test.insert({i}, {i_data});*/
          test.insert({i}, {"safdkjsadklfjsdalfjksdajfklsafjklsdafjsdaljfkjsdkfjlsdkfjsdaklfajfkssdaklghjkfhguhi4hjwjkh"});
          //cout << "Insert done" << endl;
+
+         //Test after merge with PAGE_SIZE=512 if all objects are there (innerNode maxCount=17 / 18 children; leafNode maxCount=3)
+         /*if ((i+1)% 30 == 0) {
+            for(int j=0; j<i;j++) {
+               test_tx(j);
+            }
+         }*/
 
          //cout << "Test Select: " << endl;
          test_tx(i);
@@ -95,7 +102,7 @@ int main(int argc, char** argv)
          jumpmuTry()
          {
             u32 test_id = urand(1, zaehler-1);
-            test_tx(test_id);
+            test_tx(i);
             if (FLAGS_tpcc_abort_pct && urand(0, 100) <= FLAGS_tpcc_abort_pct) {
             } else {
             }
