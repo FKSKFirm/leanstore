@@ -21,34 +21,59 @@ namespace leanstore
             s32 positionInNode = -1;
             bool done = false;
 
-            BufferFrame* oldRootsUpper;
+            int keyBefore = -1;
 
-            LSMBTreeMergeIteratorNew(btree::BTreeGeneric& oldTree, btree::BTreeGeneric& newTree) : btree(oldTree), newBtree(newTree) {
-               oldRootsUpper = ((btree::BTreeNode*)((btree::BTreeNode*)oldTree.meta_node_bf->page.dt)->upper.bfPtr()->page.dt)->upper.bf;
-            }
+            LSMBTreeMergeIteratorNew(btree::BTreeGeneric& oldTree, btree::BTreeGeneric& newTree) : btree(oldTree), newBtree(newTree) { }
+            ~LSMBTreeMergeIteratorNew() { leaf.unlock(); }
 
             void moveToFirstLeaf() {
-               leaf.unlock();
-               HybridPageGuard<btree::BTreeNode> parent_guard(btree.meta_node_bf);
-               HybridPageGuard current_node(parent_guard, parent_guard->upper);
-               assert(current_node.ptr()->upper.bfPtr() == oldRootsUpper);
+               while (true) {
+                  jumpmuTry()
+                  {
+                     leaf.unlock();
+                     HybridPageGuard<btree::BTreeNode> parent_guard(btree.meta_node_bf);
+                     HybridPageGuard current_node(parent_guard, parent_guard->upper);
 
-               while (!current_node->is_leaf) {
-                  // go one level deeper
-                  parent_guard = std::move(current_node);
-                  Swip<btree::BTreeNode>& childToFollow = parent_guard->upper;
-                  if (parent_guard->count > 0) {
-                     childToFollow = parent_guard->getChild(0);
+                     if (current_node->is_leaf && current_node->count == 0) {
+                        // empty btree (only root as leaf exists and this node is empty)
+                        parent_guard.unlock();
+                        //leaf = std::move(current_node);
+                        //cout << "Empty root: " << current_node.bufferFrame << " meta node: " << parent_guard.bufferFrame << endl;
+                        done = true;
+                        jumpmu_break;
+                     }
+
+                     assert(!current_node.ptr()->is_leaf || current_node->count > 0);
+
+                     while (!current_node->is_leaf) {
+                        // go one level deeper
+                        parent_guard = std::move(current_node);
+                        Swip<btree::BTreeNode>* childToFollow;
+                        if (parent_guard->count > 0) {
+                           childToFollow = &parent_guard->getChild(0);
+                        } else {
+                           childToFollow = &parent_guard->upper;
+                        }
+                        current_node = HybridPageGuard(parent_guard, *childToFollow);
+                     }
+                     if (current_node->count == 0) {
+                        done = true;
+                        jumpmu_break;
+                     }
+                     assert(current_node->count > 0);
+                     //assert(leaf.bufferFrame != current_node.bufferFrame);
+                     parent_guard.unlock();
+                     leaf = std::move(current_node);
+                     positionInNode = 0;
+                     assert(keyBefore+1 == __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31));
+                     jumpmu_break;
                   }
-                  current_node = HybridPageGuard(parent_guard, childToFollow);
+                  jumpmuCatch() {cout<<"something happened during move to first leaf"<<endl;}
                }
-               assert(leaf.bufferFrame != current_node.bufferFrame);
-               leaf = std::move(current_node);
-               positionInNode = 0;
             }
 
             bool nextKV() {
-               leaf->getKey(positionInNode);
+               keyBefore = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31);
                leaf->getKeyLen(positionInNode);
                leaf->getPayload(positionInNode);
                leaf->getPayloadLength(positionInNode);
@@ -56,6 +81,7 @@ namespace leanstore
                assert(leaf->is_leaf);
                if (positionInNode+1 < leaf->count) {
                   positionInNode++;
+                  assert(keyBefore+1 == __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31));
                   return true;
                }
                else {
@@ -63,7 +89,7 @@ namespace leanstore
                   return nextLeaf();
                }
             }
-int counter = 0;
+
             bool nextLeaf() {
                // findParent(this node) and lock it exclusive
                //    if its the meta_node: return false
@@ -73,44 +99,44 @@ int counter = 0;
                //    get the next leaf (follow in every inner node child0 or upper) / could use moveToFirstLeaf as well
                // if the parent node has no more entries:
                //    call nextLeaf()
-counter++;
-               auto parent = btree.findParent(btree, *leaf.bufferFrame);
-               HybridPageGuard<btree::BTreeNode> parentNodeGuard = parent.getParentReadPageGuard<btree::BTreeNode>();
-               parentNodeGuard.toExclusive();
+               while (true) {
+                  jumpmuTry()
+                  {
+                     auto parent = btree.findParent(btree, *leaf.bufferFrame);
+                     HybridPageGuard<btree::BTreeNode> parentNodeGuard = parent.getParentReadPageGuard<btree::BTreeNode>();
+                     parentNodeGuard.toExclusive();
 
-               if (parent.parent_bf == btree.meta_node_bf) {
-                  // merge done
-                  // lock root of new Tree and delete upper ptr reference to this node
-                  // get the highest child in the root of the new Tree and set this as upper ptr, decrement count (check for a count == 1, then the root is not necessary)
-                  // new Tree is now ready
-                  // reclaim
-                  if (newBtree.meta_node_bf != btree.meta_node_bf) {
-                     auto parentInNewTree = newBtree.findParent(newBtree, *parent.parent_bf);
-                     HybridPageGuard<btree::BTreeNode> parentInNewTreePageGuard = parentInNewTree.getParentReadPageGuard<btree::BTreeNode>();
-                     parentInNewTreePageGuard.toExclusive();
-                     parentInNewTreePageGuard->upper = parentInNewTreePageGuard->getChild(parentInNewTreePageGuard->count - 1);
-                     parentInNewTreePageGuard->removeSlot(parentInNewTreePageGuard->count - 1);
-                     parentNodeGuard.reclaim();
+                     if (parentNodeGuard.bufferFrame == btree.meta_node_bf) {
+                        // merge done
+                        // TODO: Really reclaim the meta node here?
+                        //parentNodeGuard.reclaim();
+                        //TODO: really reclaim the old root node here?
+                        //leaf.toExclusive();
+                        assert(leaf.bufferFrame != btree.meta_node_bf);
+                        leaf.unlock();
+                        //leaf.reclaim();
+                        done = true;
+                        jumpmu_return false;
+                     }
+                     else {
+                        leaf.toExclusive();
+                        assert(leaf.bufferFrame != btree.meta_node_bf);
+                        leaf.reclaim();
+                        if (parentNodeGuard.ptr()->count == 0) {
+                           // the leaf was pointed by the upper ptr, so we can reclaim this parent as well
+                           leaf = std::move(parentNodeGuard);
+                           bool ret = nextLeaf();
+                           jumpmu_return ret;
+                        }
+                        else {
+                           parentNodeGuard.ptr()->removeSlot(0);
+                           parentNodeGuard.unlock();
+                           moveToFirstLeaf();
+                           jumpmu_return true;
+                        }
+                     }
                   }
-                  done = true;
-                  leaf.toExclusive();
-                  leaf.reclaim();
-                  return false;
-               }
-               else {
-                  leaf.toExclusive();
-                  leaf.reclaim();
-                  if (parentNodeGuard.ptr()->count == 0) {
-                     // the leaf was pointed by the upper ptr, so we can reclaim this parent as well
-                     leaf = std::move(parentNodeGuard);
-                     return nextLeaf();
-                  }
-                  else {
-                     parentNodeGuard.ptr()->removeSlot(0);
-                     parentNodeGuard.unlock();
-                     moveToFirstLeaf();
-                     return true;
-                  }
+                  jumpmuCatch() {cout<<"something happened nextLeaf"<<endl;}
                }
             }
 

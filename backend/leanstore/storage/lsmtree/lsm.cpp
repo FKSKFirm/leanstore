@@ -3,6 +3,7 @@
 #include <iostream>
 #include <leanstore/storage/btree/core/BTreeGenericIterator.hpp>
 #include <leanstore/storage/btree/core/BTreeNode.hpp>
+#include <leanstore/storage/lsmtree/LSMBTreeMergeIterator.hpp>
 
 using namespace std;
 using namespace leanstore::storage;
@@ -131,6 +132,7 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
             new_node->type = LSM_TYPE::BTree;
             new_node->level = btree.level;
 
+            //prefix in this node (key with "http://..." to "https://..." would have the prefix "http" with length 4
             new_node->prefix_length = commonPrefix(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen,
                                               entries->front().keyOffset + keyStorage->data(), entries->front().keyLen);
             for (unsigned i = 0; i < entries->size(); i++)
@@ -141,9 +143,22 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
             new_node->count = entries->size();
             new_node->insertFence(new_node->lower_fence, entries->back().keyOffset + keyStorage->data(),
                                   new_node->prefix_length);  // XXX: could put prefix before last key and set upperfence
+            new_node->insertFence(new_node->upper_fence, entries->back().keyOffset + keyStorage->data(),
+                                  entries->back().keyLen);
             new_node->makeHint();
 
-            btree.insertLeafNode(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+            //int lowestKey = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(new_node->getKey(0))) ^ (1ul << 31);
+            //int highestKey = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(new_node->getKey(entries->size()-1))) ^ (1ul << 31);
+
+
+            //assert(new_node->compareKeyWithBoundaries(new_node->getKey(new_node->count-1), new_node->getKeyLen(new_node->count-1)) == 0);
+            //assert(new_node->compareKeyWithBoundaries(new_node->getKey(0), new_node->getKeyLen(0)) == 1);
+
+
+         //btree.insertLeafNode(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+            btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+
+            //cout << "Node Buffer: " << new_node.getBufferFrame() << endl;
 
             jumpmu_break;
       }
@@ -164,9 +179,32 @@ unsigned bufferKey(BTreeIterator& a, vector<uint8_t>& keyStorage)
 
    return pl + kl;
 }
+// adds the prefix and the key to keyStorage and returns the length of prefix and key
+unsigned bufferKeyNew(LSMBTreeMergeIteratorNew& a, vector<uint8_t>& keyStorage)
+{
+   // insert the Prefix at the end of keyStorage
+   unsigned pl = a.leaf->prefix_length;
+   keyStorage.insert(keyStorage.end(), a.leaf->getLowerFenceKey(), a.leaf->getLowerFenceKey() + pl);
+
+   // insert the key in the keyStorage
+   unsigned kl = a.getKeyLen();
+   keyStorage.insert(keyStorage.end(), a.getKey(), a.getKey() + kl);
+
+   return pl + kl;
+}
 
 // adds the payload to payloadStorage and returns the length of the payload
 unsigned bufferPayload(BTreeIterator& a, vector<uint8_t>& payloadStorage)
+{
+   // insert the key in the keyStorage
+   unsigned pll = a.getPayloadLen();
+   payloadStorage.insert(payloadStorage.end(), a.getPayload(), a.getPayload() + pll);
+
+   return pll;
+}
+
+// adds the payload to payloadStorage and returns the length of the payload
+unsigned bufferPayloadNew(LSMBTreeMergeIteratorNew& a, vector<uint8_t>& payloadStorage)
 {
    // insert the key in the keyStorage
    unsigned pll = a.getPayloadLen();
@@ -206,7 +244,7 @@ void LSM::createLeafNodeForSortedInsert(btree::BTreeNode* rootNode, DataStructur
          new_upper_node->level = dsi->level;
          // connect the upper pointer of the empty root node to the new bufferFrame
          rootNode->upper = new_upper_node.getBufferFrame();
-
+         cout << new_upper_node.getBufferFrame() << endl;
          jumpmu_break;
       }
       jumpmuCatch() {}
@@ -242,149 +280,450 @@ unique_ptr<StaticBTree> LSM::mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree
       dsi.level = bTree->level;
    }
 
-   // create new meta_node (could even pick the meta_node of aTree or bTree, but here we only know the root of these two trees, not the meta node)
-   auto& newMetaNode = BMC::global_bf->allocatePage();
-   Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
-   newMetaNode.header.keep_in_memory = true;
-   newMetaNode.page.dt_id = this->dt_id;
-   ((btree::BTreeNode*)newMetaNode.page.dt)->type = dsi.type;
-   ((btree::BTreeNode*)newMetaNode.page.dt)->level = dsi.level;
-   guard.unlock();
+   jumpmuTry()
+   {
+      // create new meta_node (could even pick the meta_node of aTree or bTree, but here we only know the root of these two trees, not the meta node)
+      auto& newMetaNode = BMC::global_bf->allocatePage();
+      Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
+      newMetaNode.header.keep_in_memory = true;
+      newMetaNode.page.dt_id = this->dt_id;
+      ((btree::BTreeNode*)newMetaNode.page.dt)->type = dsi.type;
+      ((btree::BTreeNode*)newMetaNode.page.dt)->level = dsi.level;
+      guard.unlock();
 
-   newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
-   this->bTreeInMerge = &newTree->tree;
+      newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
+      this->bTreeInMerge = &newTree->tree;
 
-   btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
-   btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
-   rootNode->is_leaf = false;
+      btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
+      btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
+      rootNode->is_leaf = false;
 
-   // we need a dummy node (upper ptr) get later the inner node in which we can insert complete nodes
-   createLeafNodeForSortedInsert(rootNode, &dsi);
+      if(bTreePG == NULL) {
+         // we need a dummy node (upper ptr)
+         createLeafNodeForSortedInsert(rootNode, &dsi);
+      }
+      else {
+         rootNode->upper = bTreePG->bufferFrame;
+      }
+      newTree->tree.pageCount = 2; //root node + upper dummy node (does not contain the pages of the old tree
+      newTree->tree.height = 2; //root node + upper dummy node/old tree root
 
-   uint64_t entryCount = 0;
+      uint64_t entryCount = 0;
 
-   unsigned totalKeySize = 0;
-   unsigned totalPayloadSize = 0;
-   // saves the keyOffset and the length of the key and the payloadOffset and the length of the payload
-   JMUW<vector<KeyValueEntry>> kvEntries;
-   // saves the complete keys in one big list
-   JMUW<vector<uint8_t>> keyStorage;
-   // saves the payload in one big list
-   JMUW<vector<uint8_t>> payloadStorage;
-   keyStorage->reserve(btree::btreePageSize * 2);
-   payloadStorage->reserve(btree::btreePageSize * 2);
+      unsigned totalKeySize = 0;
+      unsigned totalPayloadSize = 0;
+      // saves the keyOffset and the length of the key and the payloadOffset and the length of the payload
+      JMUW<vector<KeyValueEntry>> kvEntries;
+      // saves the complete keys in one big list
+      JMUW<vector<uint8_t>> keyStorage;
+      // saves the payload in one big list
+      JMUW<vector<uint8_t>> payloadStorage;
+      keyStorage->reserve(btree::btreePageSize * 2);
+      payloadStorage->reserve(btree::btreePageSize * 2);
 
-   BTreeIterator a(aTree);
-   BTreeIterator b(bTree);
-   JMUW<vector<uint8_t>> keyA, keyB;
-   keyA->reserve(btree::btreePageSize);
-   keyB->reserve(btree::btreePageSize);
+      LSMBTreeMergeIterator aLSMIterator(*aTreePG);
+      LSMBTreeMergeIteratorNew aNewLSMIterator(newTree->tree, newTree->tree);
+      aNewLSMIterator.moveToFirstLeaf();
+      do {
+         do {
+            aNewLSMIterator.leaf->getKey(aNewLSMIterator.positionInNode);
+            aNewLSMIterator.leaf->getKeyLen(aNewLSMIterator.positionInNode);
+            aNewLSMIterator.leaf->getPayload(aNewLSMIterator.positionInNode);
+            aNewLSMIterator.leaf->getPayloadLength(aNewLSMIterator.positionInNode);
+         } while (aNewLSMIterator.nextKV());
+      } while (aNewLSMIterator.nextLeaf());
 
-   JMUW<vector<uint64_t>> hashes;
+      BTreeIterator a(aTree);
+      BTreeIterator b(bTree);
+      JMUW<vector<uint8_t>> keyA, keyB;
+      keyA->reserve(btree::btreePageSize);
+      keyB->reserve(btree::btreePageSize);
 
-   while (true) {
-      BTreeIterator* it;
+      JMUW<vector<uint64_t>> hashes;
+/*https://github.com/adnan-alhomssi/leanstore/tree/master/frontend/tpc-c
+ *
+ *
+https://github.com/adnan-alhomssi/leanstore/blob/master/frontend/CMakeLists.txt
 
-      if (a.done()) {
-         if (b.done()) {
-            // all entries processed, create last page and exit
+
+sudo apt-get install libsnappy-dev  zlib1g-dev libbz2-dev liblz4-dev libzstd-dev librocksdb-dev
+
+
+while(true){
+jumpmuTry(){
+guard =HybridPageGuard(..);
+guard.toExclusiveLock();
+}
+jumpmuCatch(){}
+}
+
+
+while(true){
+jumpmuTry(){
+guard =HybridPageGuard(..);
+guard.toExclusiveLock();
+jumpmu_break;
+}
+jumpmuCatch(){}
+
+
+}*/
+/*
+         jumpmuTry()
+         {
+            btree::BTreePessimisticIterator aTreeIterator(*static_cast<btree::BTreeGeneric*>(this->inMemBTree.get()));
+            aTreeIterator.moveToFirstLeaf();
+            aTreeIterator.next();
+         }
+         jumpmuCatch() { ensure(false); }
+
+*/
+
+
+
+
+
+
+
+      while (true) {
+         BTreeIterator* it;
+         aLSMIterator.done();
+         ++aLSMIterator;
+
+         if (a.done()) {
+            if (b.done()) {
+               // all entries processed, create last page and exit
+               entryCount += kvEntries->size();
+               buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);
+
+               // create BloomFilter
+               /*newTree->filter.init(entryCount);
+               for (auto h : hashes)
+                  newTree->filter.insert(h);*/
+
+               // release all nodes of the two merged trees
+               if (aTree->type == LSM_TYPE::InMemoryBTree) {
+                  // merge between InMemBTree and tier[0]
+                  int beforeCounter = this->inMemBTree->pageCount;
+                  int counter = this->inMemBTree->releaseAllPagesRec(*aTreePG);
+                  assert(counter == beforeCounter);
+
+                  // bTree can be null, when only the inMemTree exists
+                  if (bTree != NULL) {
+                     beforeCounter = this->tiers[0]->tree.pageCount;
+                     counter = this->tiers[0]->tree.releaseAllPagesRec(*bTreePG);
+                     assert(counter == beforeCounter);
+                  }
+               } else {
+                  // merge between tier[x] and tier[x+1]
+                  int beforeCounter = this->tiers[dsi.level - 1]->tree.pageCount;
+                  int counter = this->tiers[dsi.level - 1]->tree.releaseAllPagesRec(*aTreePG);
+                  assert(counter == beforeCounter);
+
+                  // bTree cant be null, because when the tree at level x is too large it is only moved to level x+1 in mergeAll()
+                  if (bTree != NULL) {
+                     beforeCounter = this->tiers[dsi.level]->tree.pageCount;
+                     counter = this->tiers[dsi.level]->tree.releaseAllPagesRec(*bTreePG);
+                     assert(counter == beforeCounter);
+                  }
+               }
+
+               return newTree;
+            }
+            it = &b;
+         } else if (b.done()) {
+            it = &a;
+         } else {  // take smaller element
+            keyA->resize(0);
+            bufferKey(a, keyA.obj);
+            keyB->resize(0);
+            bufferKey(b, keyB.obj);
+            int compareValue = cmpKeys(keyA->data(), keyB->data(), keyA->size(), keyB->size());
+            if (compareValue == 0) {
+               // both keys have the same key; this can happen through an update or an deletion (or a duplicate insert!!!!)
+               //  so TODO: avoid inserting duplicate keys
+               // keyA is the newer key (higher LSM tree tier)
+               if (a.getDeletionFlag()) {
+                  // key was in fact deleted, but we need the deletion entry for further levels where the original key may occur again!
+                  // only if bTree is the lowest tier of the lsm tree we can forget the deletion marker and delete the entry really :)
+                  if (bTree->level == this->tiers.size() - 1) {
+                     ++a;
+                  }
+                  // could also test the bloom filters of further levels or do a lookup if the key occurs in a lower level, then we could delete the entry as well
+               }
+               // b is in every case the older value, isnt needed anymore (regardless if its a deleted entry, an updated entry or an originally inserted entry)
+               ++b;
+               continue;
+            } else {
+               it = compareValue < 0 ? &a : &b;
+            }
+         }
+         unsigned keyOffset = keyStorage->end() - keyStorage->begin();
+         unsigned keyLen = bufferKey(*it, keyStorage.obj);
+         unsigned payloadOffset = payloadStorage->end() - payloadStorage->begin();
+         unsigned payloadLen = bufferPayload(*it, payloadStorage.obj);
+         bool deletionFlag = it->getDeletionFlag();
+
+         kvEntries->push_back({keyOffset, keyLen, payloadOffset, payloadLen, deletionFlag});
+
+         uint8_t* key = keyStorage->data() + keyStorage->size() - keyLen;
+         // uint8_t* payload = payloadStorage.data() + payloadStorage.size() - payloadLen;
+         hashes->push_back(BloomFilter::hashKey(key, keyLen));
+
+         unsigned prefix = commonPrefix(kvEntries->front().keyOffset + keyStorage->data(), kvEntries->front().keyLen, key, keyLen);
+         if (spaceNeeded(prefix, totalKeySize + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
+            // key does not fit, create new page
+            kvEntries->pop_back();
             entryCount += kvEntries->size();
-            buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);
-
-            // create BloomFilter
-            /*newTree->filter.init(entryCount);
-            for (auto h : hashes)
-               newTree->filter.insert(h);*/
-
-            // release all nodes of the two merged trees
-            if (aTree->type == LSM_TYPE::InMemoryBTree) {
-               //merge between InMemBTree and tier[0]
-               int beforeCounter = this->inMemBTree->countPages();
-               int counter = this->inMemBTree->releaseAllPagesRec(*aTreePG);
-               assert(counter == beforeCounter);
-
-               //bTree can be null, when only the inMemTree exists
-               if (bTree != NULL) {
-                  beforeCounter = this->tiers[0]->tree.countPages();
-                  counter = this->tiers[0]->tree.releaseAllPagesRec(*bTreePG);
-                  assert(counter == beforeCounter);
-               }
-            }
-            else {
-               //merge between tier[x] and tier[x+1]
-               int beforeCounter = this->tiers[dsi.level-1]->tree.countPages();
-               int counter = this->tiers[dsi.level-1]->tree.releaseAllPagesRec(*aTreePG);
-               assert(counter == beforeCounter);
-
-               //bTree cant be null, because when the tree at level x is too large it is only moved to level x+1 in mergeAll()
-               if (bTree != NULL) {
-                  beforeCounter = this->tiers[dsi.level]->tree.countPages();
-                  counter = this->tiers[dsi.level]->tree.releaseAllPagesRec(*bTreePG);
-                  assert(counter == beforeCounter);
-               }
-            }
-
-            return newTree;
-         }
-         it = &b;
-      } else if (b.done()) {
-         it = &a;
-      } else {  // take smaller element
-         keyA->resize(0);
-         bufferKey(a, keyA.obj);
-         keyB->resize(0);
-         bufferKey(b, keyB.obj);
-         int compareValue = cmpKeys(keyA->data(), keyB->data(), keyA->size(), keyB->size());
-         if (compareValue == 0) {
-            //both keys have the same key; this can happen through an update or an deletion (or a duplicate insert!!!!)
-            // so TODO: avoid inserting duplicate keys
-            //keyA is the newer key (higher LSM tree tier)
-            if (a.getDeletionFlag()) {
-               // key was in fact deleted, but we need the deletion entry for further levels where the original key may occur again!
-               // only if bTree is the lowest tier of the lsm tree we can forget the deletion marker and delete the entry really :)
-               if (bTree->level == this->tiers.size()-1) {
-                  ++a;
-               }
-               //could also test the bloom filters of further levels or do a lookup if the key occurs in a lower level, then we could delete the entry as well
-            }
-            // b is in every case the older value, isnt needed anymore (regardless if its a deleted entry, an updated entry or an originally inserted entry)
-            ++b;
-            continue;
-         }
-         else {
-            it = compareValue < 0 ? &a : &b;
+            buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);  // could pick shorter separator here
+            kvEntries->clear();
+            keyStorage->clear();
+            payloadStorage->clear();
+            totalKeySize = 0;
+            totalPayloadSize = 0;
+         } else {
+            // key fits, buffer it
+            // go to next entry in the tree
+            ++(*it);
+            totalKeySize += keyLen;
+            totalPayloadSize += payloadLen;
          }
       }
-      unsigned keyOffset = keyStorage->end() - keyStorage->begin();
-      unsigned keyLen = bufferKey(*it, keyStorage.obj);
-      unsigned payloadOffset = payloadStorage->end() - payloadStorage->begin();
-      unsigned payloadLen = bufferPayload(*it, payloadStorage.obj);
-      bool deletionFlag = it->getDeletionFlag();
+   }
+   jumpmuCatch(){
 
-      kvEntries->push_back({keyOffset, keyLen, payloadOffset, payloadLen, deletionFlag});
+   }
+}// aTree is the root node (not the meta node!) of the first tree, bTree the root node of the second tree (may be null)
+unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL* bTree)
+{
+   auto newTree = make_unique<StaticBTree>();
 
-      uint8_t* key = keyStorage->data() + keyStorage->size() - keyLen;
-      //uint8_t* payload = payloadStorage.data() + payloadStorage.size() - payloadLen;
-      hashes->push_back(BloomFilter::hashKey(key, keyLen));
+   // a new merged tree is always on disk, never a In-memory tree
+   newTree->tree.type = LSM_TYPE::BTree;
+   newTree->filter.type = LSM_TYPE::BloomFilter;
 
-      unsigned prefix = commonPrefix(kvEntries->front().keyOffset + keyStorage->data(), kvEntries->front().keyLen, key, keyLen);
-      if (spaceNeeded(prefix, totalKeySize + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
-         // key does not fit, create new page
-         kvEntries->pop_back();
-         entryCount += kvEntries->size();
-         buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);  // could pick shorter separator here
-         kvEntries->clear();
-         keyStorage->clear();
-         payloadStorage->clear();
-         totalKeySize = 0;
-         totalPayloadSize = 0;
-      } else {
-         // key fits, buffer it
-         // go to next entry in the tree
-         ++(*it);
-         totalKeySize += keyLen;
-         totalPayloadSize += payloadLen;
+   //dsi needed for root bTreeNode
+   DataStructureIdentifier dsi = DataStructureIdentifier();
+   dsi.type = LSM_TYPE::BTree;
+
+   if (bTree == NULL) { // we create the first level on disk, so the new merged tree has level 0 on disk
+      newTree->tree.level = 0;
+      newTree->filter.level = 0;
+      dsi.level = 0;
+   }
+   else { // aTree is to large for level i, so its merged into bTree which resides at level i+1
+      newTree->tree.level = bTree->level;
+      newTree->filter.level = bTree->level;
+      dsi.level = bTree->level;
+   }
+
+   jumpmuTry()
+   {
+      // create new meta_node (could even pick the meta_node of aTree or bTree, but here we only know the root of these two trees, not the meta node)
+      auto& newMetaNode = BMC::global_bf->allocatePage();
+      Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
+      newMetaNode.header.keep_in_memory = true;
+      newMetaNode.page.dt_id = this->dt_id;
+      ((btree::BTreeNode*)newMetaNode.page.dt)->type = dsi.type;
+      ((btree::BTreeNode*)newMetaNode.page.dt)->level = dsi.level;
+      guard.unlock();
+
+      newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
+      this->bTreeInMerge = &newTree->tree;
+
+      btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
+      btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
+      rootNode->is_leaf = false;
+      BufferFrame* rootMerker;
+
+      if(bTree == NULL) {
+         // we need a dummy node (upper ptr)
+
+         // test with the inMemBTree as upper ptr
+         HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
+         HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
+         rootNode->upper = rootPg.swip();
+         rootMerker = rootPg.bufferFrame;
+         rootPg.unlock();
+         pg.unlock();
+
+         //createLeafNodeForSortedInsert(rootNode, &dsi);
       }
+      else {
+         // bTree is the tree at level i+1, which will be replaced. Set its root as upper "dummy node" of the new root
+         HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(bTree->meta_node_bf);
+         HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
+         rootNode->upper = rootPg.swip();
+         // we need to set the old root as keepInMemory, because two swips point to this node (meta_node and now the root of the new tree)#
+         rootPg.bufferFrame->header.keep_in_memory = true;
+         rootMerker = rootPg.bufferFrame;
+         rootPg.unlock();
+         pg.unlock();
+      }
+      newTree->tree.pageCount = 2; //root node + upper dummy node (does not contain the pages of the old tree)
+      newTree->tree.height = 2; //root node + upper dummy node/old tree root
+
+      uint64_t entryCount = 0;
+
+      unsigned totalKeySize = 0;
+      unsigned totalPayloadSize = 0;
+      // saves the keyOffset and the length of the key and the payloadOffset and the length of the payload
+      JMUW<vector<KeyValueEntry>> kvEntries;
+      // saves the complete keys in one big list
+      JMUW<vector<uint8_t>> keyStorage;
+      // saves the payload in one big list
+      JMUW<vector<uint8_t>> payloadStorage;
+      keyStorage->reserve(btree::btreePageSize * 2);
+      payloadStorage->reserve(btree::btreePageSize * 2);
+
+      LSMBTreeMergeIteratorNew aTreeLSMIterator(*aTree, newTree->tree);
+      LSMBTreeMergeIteratorNew bTreeLSMIterator(*bTree, newTree->tree);
+      LSMBTreeMergeIteratorNew* iterator;
+
+      aTreeLSMIterator.moveToFirstLeaf();
+      if(bTree==NULL) {
+         bTreeLSMIterator.done = true;
+      }
+      else {
+         bTreeLSMIterator.moveToFirstLeaf();
+      }
+
+      JMUW<vector<uint8_t>> keyA, keyB;
+      keyA->reserve(btree::btreePageSize);
+      keyB->reserve(btree::btreePageSize);
+
+      JMUW<vector<uint64_t>> hashes;
+      int insertedKey = -1;
+
+      while (true) {
+         if (aTreeLSMIterator.done) {
+            if (bTreeLSMIterator.done) {
+               // all entries processed, create last page and exit
+               entryCount += kvEntries->size();
+               // TODO: better buildNode with upper replacement (does not split the node which would cause the problem with the node-count=1)
+               buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);
+               //cout << "*** Builded last node ***" << endl;
+
+               assert(((btree::BTreeNode*)((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
+
+               // create BloomFilter
+               /*newTree->filter.init(entryCount);
+               for (auto h : hashes)
+                  newTree->filter.insert(h);*/
+
+
+               // merge done
+               // lock root of new Tree and delete upper ptr reference to this node
+               // get the highest child in the root of the new Tree and set this as upper ptr, decrement count (check for a count == 1, then the root is not necessary)
+               // new Tree is now ready
+               // reclaim
+               // We need to set the highest upper ptr correct (pointed to imMemBtree-Root if bTree was NULL or to the old tier root)
+               // the old tree of tier[i] is set as the highest upper ptr in the new tree at tier[i]
+               // therefore we must remove this old root like the dummy node and set the pointers in its parent node in the new tree correct
+               HybridPageGuard<btree::BTreeNode> upperNode = HybridPageGuard<btree::BTreeNode>(newTree->tree.meta_node_bf);
+               HybridPageGuard<btree::BTreeNode> currentNode(upperNode, upperNode->upper);
+               assert(rootMerker->header.keep_in_memory);
+               if(bTree != NULL) {
+                  assert(rootMerker == ((btree::BTreeNode*)bTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
+               }
+               else {
+                  assert(rootMerker == ((btree::BTreeNode*)aTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
+               }
+               while (currentNode.bufferFrame != rootMerker) {
+                  upperNode = std::move(currentNode);
+                  Swip<btree::BTreeNode>* childToFollow = &upperNode->upper;
+                  currentNode = HybridPageGuard(upperNode, *childToFollow);
+               }
+               assert(currentNode.bufferFrame->header.keep_in_memory);
+               if (upperNode->count <= 1) {
+                  // TODO: Problem when we remove slot 0 -> count=0 and only upper ptr is set
+                  // We need to reclaim the currentNode and set the left child (slot0) as new root
+                  cout << "Count Root" << upperNode->count << endl;
+               }
+               assert(upperNode.bufferFrame != newTree->tree.meta_node_bf);
+               upperNode.toExclusive();
+               upperNode->upper = upperNode->getChild(upperNode->count-1);
+
+               assert(((btree::BTreeNode*)((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
+
+               upperNode->removeSlot(upperNode->count-1);
+               //reclaim old root (meta node was already reclaimed in iterator)
+               //currentNode.toExclusive();
+               //currentNode.reclaim();
+
+               assert(((btree::BTreeNode*)((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
+
+               jumpmu_return newTree;
+            }
+            iterator = &bTreeLSMIterator;
+         } else if (bTreeLSMIterator.done) {
+            iterator = &aTreeLSMIterator;
+         } else {  // take smaller element
+            keyA->resize(0);
+            bufferKeyNew(aTreeLSMIterator, keyA.obj);
+            keyB->resize(0);
+            bufferKeyNew(bTreeLSMIterator, keyB.obj);
+            int compareValue = cmpKeys(keyA->data(), keyB->data(), keyA->size(), keyB->size());
+            if (compareValue == 0) {
+               // both keys have the same key; this can happen through an update or an deletion (or a duplicate insert!!!!)
+               //  so TODO: avoid inserting duplicate keys
+               // keyA is the newer key (higher LSM tree tier)
+               if (aTreeLSMIterator.getDeletionFlag()) {
+                  // key was in fact deleted, but we need the deletion entry for further levels where the original key may occur again!
+                  // only if bTree is the lowest tier of the lsm tree we can forget the deletion marker and delete the entry really :)
+                  if (bTree->level == this->tiers.size() - 1) {
+                     aTreeLSMIterator.nextKV();
+                  }
+                  // could also test the bloom filters of further levels or do a lookup if the key occurs in a lower level, then we could delete the entry as well
+               }
+               // b is in every case the older value, isnt needed anymore (regardless if its a deleted entry, an updated entry or an originally inserted entry)
+               bTreeLSMIterator.nextKV();
+               continue;
+            } else {
+               iterator = compareValue < 0 ? &aTreeLSMIterator : &bTreeLSMIterator;
+            }
+         }
+         unsigned keyOffset = keyStorage->end() - keyStorage->begin();
+         unsigned keyLen = bufferKeyNew(*iterator, keyStorage.obj);
+         unsigned payloadOffset = payloadStorage->end() - payloadStorage->begin();
+         unsigned payloadLen = bufferPayloadNew(*iterator, payloadStorage.obj);
+         bool deletionFlag = iterator->getDeletionFlag();
+
+         kvEntries->push_back({keyOffset, keyLen, payloadOffset, payloadLen, deletionFlag});
+
+         uint8_t* key = keyStorage->data() + keyStorage->size() - keyLen;
+         // uint8_t* payload = payloadStorage.data() + payloadStorage.size() - payloadLen;
+         hashes->push_back(BloomFilter::hashKey(key, keyLen));
+
+         unsigned prefix = commonPrefix(kvEntries->front().keyOffset + keyStorage->data(), kvEntries->front().keyLen, key, keyLen);
+         if (spaceNeeded(prefix, totalKeySize + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
+            // key does not fit, create new page
+            kvEntries->pop_back();
+            entryCount += kvEntries->size();
+            buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);  // could pick shorter separator here
+            //cout << "Builded node" << endl;
+            kvEntries->clear();
+            keyStorage->clear();
+            payloadStorage->clear();
+            totalKeySize = 0;
+            totalPayloadSize = 0;
+         } else {
+            // key fits, buffer it
+            // go to next entry in the tree
+
+            int newInsertedKey = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(key)) ^ (1ul << 31);
+            //assert(insertedKey+1 == newInsertedKey);
+            insertedKey = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(key)) ^ (1ul << 31);
+            //cout << "Merged key: " << insertedKey << endl;
+
+            iterator->nextKV();
+            totalKeySize += keyLen;
+            totalPayloadSize += payloadLen;
+         }
+      }
+   }
+   jumpmuCatch(){
+
    }
 }
 LSM::LSM() : inMemBTree(std::make_unique<btree::BTreeLL>()) {inMemBTree->type=LSM_TYPE::InMemoryBTree; inMemBTree->level = 0;}
@@ -425,8 +764,8 @@ void LSM::printLevels()
 {
    uint64_t sum = 0;
    for (auto& t : tiers) {
-      sum += t->tree.countPages();
-      cout << t->tree.countPages() << " ";
+      sum += t->tree.pageCount;
+      cout << t->tree.pageCount << " ";
    }
    cout << " sum:" << sum << endl;
 }
@@ -438,33 +777,38 @@ void LSM::mergeAll()
    for (unsigned i = 0; i < tiers.size(); i++) {
       // curr = Btree on level i
       StaticBTree& curr = *tiers[i];
-      if (curr.tree.countPages() >= limit) {
+      if (curr.tree.pageCount >= limit) {
          // current observed BTree is too large
          this->levelInMerge = i+1;
          if (i + 1 < tiers.size()) {
             // merge with next level
             StaticBTree& next = *tiers[i + 1];
 
-            HybridPageGuard<btree::BTreeNode> currMetaNode_guard(curr.tree.meta_node_bf);
+            /*HybridPageGuard<btree::BTreeNode> currMetaNode_guard(curr.tree.meta_node_bf);
             HybridPageGuard<btree::BTreeNode> nextMetaNode_guard(next.tree.meta_node_bf);
             HybridPageGuard<btree::BTreeNode> currRootPageGuard = HybridPageGuard<btree::BTreeNode>(currMetaNode_guard, currMetaNode_guard->upper);
             HybridPageGuard<btree::BTreeNode> nextRootPageGuard = HybridPageGuard<btree::BTreeNode>(nextMetaNode_guard, nextMetaNode_guard->upper);
 
-            tiers[i + 1] = mergeTrees(&currRootPageGuard, &nextRootPageGuard);
+            tiers[i + 1] = mergeTrees(&currRootPageGuard, &nextRootPageGuard);*/
+            // TODO: Maybe set nextTier = NULL, when its an empty tree? -> Have to set the root as keepInMemory, because its not a InMemTree (then have to set the level correct!=> bTree==NULL != level0)
+            tiers[i + 1] = mergeTreesNew(&curr.tree, &next.tree);
+            /*
+            HybridPageGuard<btree::BTreeNode> currMetaNode_guard(curr.tree.meta_node_bf);
+            HybridPageGuard<btree::BTreeNode> nextMetaNode_guard(next.tree.meta_node_bf);
 
             //release meta nodes after merge
             ExclusivePageGuard<btree::BTreeNode> currMetaNode_x_guard(std::move(currMetaNode_guard));
             ExclusivePageGuard<btree::BTreeNode> nextMetaNode_x_guard(std::move(nextMetaNode_guard));
             currMetaNode_x_guard.reclaim();
             nextMetaNode_x_guard.reclaim();
-
+*/
             ensure(tiers[i+1]->tree.type == LSM_TYPE::BTree);
             ensure(tiers[i+1]->filter.type == LSM_TYPE::BloomFilter);
             ensure(tiers[i+1]->tree.level == i+1);
             ensure(tiers[i+1]->filter.level == i+1);
          } else {
             // new level
-            cout << "neues level, jetzt: " << i+1 << " DTID: " << this->dt_id << " countEntries LSM: " << this->countEntries() <<endl;
+            //cout << "neues level, jetzt: " << i+1 << " DTID: " << this->dt_id << " countEntries LSM: " << this->countEntries() <<endl;
             tiers.emplace_back(move(tiers.back()));
             tiers[i+1]->tree.type = LSM_TYPE::BTree;
             tiers[i+1]->tree.level = i+1;
@@ -474,6 +818,13 @@ void LSM::mergeAll()
             ((btree::BTreeNode*)tiers[i+1]->tree.meta_node_bf->page.dt)->level = i+1;
 
             // we need to set every BTreeNode->level to the new level i+1 since no mergeTrees was issued
+            // TODO: ATTENTION: if this iterateAllPages tries to find a unswizzeld pointer it doesnt work, because the level in the node is i what causes an lookup in i and not i+1
+            /*tiers[i] = make_unique<StaticBTree>();
+            DataStructureIdentifier dsi = DataStructureIdentifier();
+            dsi.type = LSM_TYPE::BTree;
+            dsi.level = i;
+            tiers[i]->tree.create(this->dt_id, tiers[i+1]->tree.meta_node_bf, &dsi);
+            tiers[i]->tree.meta_node_bf = tiers[i+1]->tree.meta_node_bf;*/
             tiers[i+1]->tree.iterateAllPages([i](btree::BTreeNode& innerNode) { innerNode.level = i+1; return 0; }, [i](btree::BTreeNode& leafNode) { leafNode.level = i+1; return 0; });
          }
 
@@ -600,7 +951,7 @@ OP_RESULT LSM::remove(u8* key, u16 keyLength)
       // lookup in complete LSM Tree (LSM_DELETED is hidden, we get only OK or NOT_FOUND)
       if (this->lookup(key, keyLength, [&](const u8* payload, u16 payload_length){}) == OP_RESULT::OK) {
          // occurs in one level below and is not deleted yet
-         return insertWithDeletionMarker(key, keyLength, nullptr, NULL, true);
+         return insertWithDeletionMarker(key, keyLength, nullptr, 0, true);
       }
       else {
          // not found in lower levels or even marked as deleted in a lower level
@@ -673,10 +1024,10 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
 // returns the number of pages in the LSM Tree
 u64 LSM::countPages()
 {
-   u64 pageCount = inMemBTree->countPages();
+   u64 pageCount = inMemBTree->pageCount;
 
    for (unsigned i = 0; i < tiers.size(); i++) {
-      pageCount += tiers[i]->tree.countPages();
+      pageCount += tiers[i]->tree.pageCount;
    }
 
    return pageCount;
@@ -717,46 +1068,54 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
    //      case3.2: key occurs in a next lower tier, but deletion marker is set in the first/newest lower tier -> could insert value again
    //            -> lower levels with the same key may exist but arent of interest (are deleted during merge)
 
-   // first lookup inMemTree
-   OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, [&](const u8*, u16){});
-   if (lookupResult == OP_RESULT::OK) {
-      // case2.2
-      return OP_RESULT::DUPLICATE;
-   } else if (lookupResult == OP_RESULT::LSM_DELETED) {
-      // case2.1
-      // real delete + insert
-      inMemBTree->remove(key, keyLength);
-   } else {
-      // lookup tiers
-      // optional: parallel lookup with queue
-      for (unsigned i = 0; i < tiers.size(); i++) {
-         // TODO enable filter lookup again
-         // if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
-         lookupResult = tiers[i]->tree.lookup(key, keyLength, [&](const u8*, u16){});
-         if (lookupResult == OP_RESULT::OK) {
-            // case3.1
-            return OP_RESULT::DUPLICATE;
-         } else if (lookupResult == OP_RESULT::LSM_DELETED) {
-            // case3.2
-            break;
+   // if its an insert of an deletionMarker, we know that we can insert in the inMemBTree because we checked it in LSM::remove before
+   if (!deletionMarker) {
+      // first lookup inMemTree
+      OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, [&](const u8*, u16) {});
+      if (lookupResult == OP_RESULT::OK) {
+         // case2.2
+         return OP_RESULT::DUPLICATE;
+      } else if (lookupResult == OP_RESULT::LSM_DELETED) {
+         // case2.1
+         // real delete + insert
+         inMemBTree->remove(key, keyLength);
+      } else {
+         // lookup tiers
+         // optional: parallel lookup with queue
+         for (unsigned i = 0; i < tiers.size(); i++) {
+            // TODO enable filter lookup again
+            // if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
+            lookupResult = tiers[i]->tree.lookup(key, keyLength, [&](const u8*, u16) {});
+            if (lookupResult == OP_RESULT::OK) {
+               // case3.1
+               return OP_RESULT::DUPLICATE;
+            } else if (lookupResult == OP_RESULT::LSM_DELETED) {
+               // case3.2
+               break;
+            }
          }
       }
+      // case1 + case3.2 + case2.1
    }
-   //case1 + case3.2 + case2.1
 
 
 
    auto result = inMemBTree->insertWithDeletionMarker(key, keyLength, payload, payloadLength, deletionMarker);
-   u64 pageCount = inMemBTree->countPages();
+
+   int insertedKey = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(key)) ^ (1ul << 31);
+
+   u64 pageCount = inMemBTree->pageCount;
    if (pageCount >= baseLimit) {
       // merge inMemory-BTree with first level BTree of LSM Tree
       this->inMerge = true;
       this->levelInMerge = 0;
 
+      //cout << "pageCount >= baseLimit bei insertedKey" << insertedKey << endl;
+
       // init pageGuard to the metaNode
-      HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
+      //HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
       // p_guard->upper is the root node, rootPageGuard.bufferFrame is set to the root node
-      HybridPageGuard<btree::BTreeNode> rootPageGuard = HybridPageGuard<btree::BTreeNode>(p_guard, p_guard->upper);
+      //HybridPageGuard<btree::BTreeNode> rootPageGuard = HybridPageGuard<btree::BTreeNode>(p_guard, p_guard->upper);
 
       // get the root node of the btree of level 0, if the level exists
       btree::BTreeNode* old = tiers.size() ? (btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt : nullptr;
@@ -765,22 +1124,30 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
       unique_ptr<StaticBTree> neu;
       if (old != nullptr) {
          this->bTreeInMerge = &tiers[0]->tree;
-         HybridPageGuard<btree::BTreeNode> old_guard(tiers[0]->tree.meta_node_bf);
+         /*HybridPageGuard<btree::BTreeNode> old_guard(tiers[0]->tree.meta_node_bf);
          HybridPageGuard<btree::BTreeNode> old_RootPageGuard = HybridPageGuard<btree::BTreeNode>(old_guard, old_guard->upper);
-         tiers[0] = mergeTrees(&rootPageGuard, &old_RootPageGuard);
+         tiers[0] = mergeTrees(&rootPageGuard, &old_RootPageGuard);*/
+         //HybridPageGuard<btree::BTreeNode> old_guard(tiers[0]->tree.meta_node_bf);
+
+         tiers[0] = mergeTreesNew(inMemBTree.get(), &tiers[0]->tree);
+         assert(((btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
          //release meta nodes after merge
-         ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
-         ExclusivePageGuard<btree::BTreeNode> tier0MetaNode_x_guard(std::move(old_guard));
-         inMemMetaNode_x_guard.reclaim();
-         tier0MetaNode_x_guard.reclaim();
+         //HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
+         //ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
+         //ExclusivePageGuard<btree::BTreeNode> tier0MetaNode_x_guard(std::move(old_guard));
+         //inMemMetaNode_x_guard.reclaim();
+         //tier0MetaNode_x_guard.reclaim();
       }
       else {
-         tiers.emplace_back(move(mergeTrees(&rootPageGuard, nullptr)));
+         // could also just emplace it back, then we would have no merge time, but the inMemBTree will not be compacted and we have to build the BloomFilter manually
+         //tiers.emplace_back(move(mergeTrees(&rootPageGuard, nullptr)));
+         tiers.emplace_back(move(mergeTreesNew(inMemBTree.get(), nullptr)));
 
          //release the meta node after merge
+         /*HybridPageGuard<btree::BTreeNode> p_guard(inMemBTree->meta_node_bf);
          ExclusivePageGuard<btree::BTreeNode> inMemMetaNode_x_guard(std::move(p_guard));
-         inMemMetaNode_x_guard.reclaim();
+         inMemMetaNode_x_guard.reclaim();*/
       }
       //cout << "mergeTrees() in insert, lower fence von neu: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getLowerFenceKey() << " upper fence: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getUpperFenceKey() << endl;
 
@@ -874,7 +1241,7 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
    // check, if merge between two level is ongoing
    if (tree->inMerge && tree->levelInMerge == toFindLevel) {//toFindLevel == tree->bTreeInMerge->level) {
       counterInMerge++;
-      cout << "Could not find parent counter: " << counterInMerge << endl;
+      //cout << "Could not find parent counter: " << counterInMerge << endl;
       jumpmu::jump();
       if (toFindType != LSM_TYPE::InMemoryBTree && toFindLevel == tree->bTreeInMerge->level) {
          // page to_find can be in old btree at toFindLevel or can be the new created btree

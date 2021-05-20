@@ -54,6 +54,7 @@ struct LSM : public KeyValueInterface {
    void mergeAll();
    //unique_ptr<StaticBTree> mergeTrees(btree::BTreeNode* aTree, btree::BTreeNode* bTree);
    unique_ptr<StaticBTree> mergeTrees(HybridPageGuard<btree::BTreeNode>* aTree, HybridPageGuard<btree::BTreeNode>* bTree);
+   unique_ptr<StaticBTree> mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL* bTree);
 
    //void insert(uint8_t* key, unsigned keyLength, uint8_t* payload, unsigned payloadLength);
 
