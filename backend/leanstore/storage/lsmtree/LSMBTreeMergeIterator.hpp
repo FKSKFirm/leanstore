@@ -64,6 +64,7 @@ namespace leanstore
                      //assert(leaf.bufferFrame != current_node.bufferFrame);
                      parent_guard.unlock();
                      leaf = std::move(current_node);
+                     leaf.toExclusive();
                      positionInNode = 0;
                      assert(keyBefore+1 == __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31));
                      jumpmu_break;
@@ -125,6 +126,7 @@ namespace leanstore
                         if (parentNodeGuard.ptr()->count == 0) {
                            // the leaf was pointed by the upper ptr, so we can reclaim this parent as well
                            leaf = std::move(parentNodeGuard);
+                           leaf.toExclusive();
                            bool ret = nextLeaf();
                            jumpmu_return ret;
                         }

@@ -647,44 +647,6 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
 }
 // -------------------------------------------------------------------------------------
 
-void BTreeGeneric::insertLeafNode(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
-   while  (true) {
-      jumpmuTry() {
-         // lock the meta node
-         HybridPageGuard<BTreeNode> parent_guard(meta_node_bf);
-         // ExclusivePageGuard<BTreeNode> metaNode_guard_exclusive = ExclusivePageGuard(std::move(metaNode_guard)); // exclusive guard for metaNode
-         // lock the root node
-         HybridPageGuard current_node(parent_guard, parent_guard->upper);
-
-         // TODO: update dummy node lower fence or delete dummy node
-
-         while (!current_node->is_leaf) {
-            // go one level deeper
-            parent_guard = std::move(current_node);
-            Swip<BTreeNode>& childToFollow = parent_guard->lookupInner(key, keyLength);
-            current_node = HybridPageGuard(parent_guard, childToFollow);
-         }
-         // we dont need the leaf node, because we want to insert in the inner node (parent_guard)
-         current_node.unlock();
-
-         if (parent_guard->canInsert(keyLength, sizeof(BTreeNode*))) {
-            ExclusivePageGuard<BTreeNode> exclusiveParentGuard = ExclusivePageGuard(std::move(parent_guard));
-            auto swip = leaf.swip();
-            exclusiveParentGuard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
-            // insert done
-            this->pageCount++;
-            jumpmu_return;
-         }
-
-         // no more space, need to split
-         parent_guard.unlock();
-
-         trySplit(*parent_guard.bufferFrame);
-      }
-      jumpmuCatch() {}
-      // retry insert
-   }
-}
 void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
    while  (true) {
       jumpmuTry() {
@@ -708,26 +670,6 @@ void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, Exclusive
          if (current_node->canInsert(keyLength, sizeof(BTreeNode*))) {
             ExclusivePageGuard<BTreeNode> exclusiveInnerNodeGuard = ExclusivePageGuard(std::move(current_node));
             auto swip = leaf.swip();
-
-/*
-            BTreeNode::SeparatorInfo sep_info;
-            sep_info = exclusiveInnerNodeGuard->findSep();
-            u8 sep_key[sep_info.length];
-            const u16 space_needed_for_separator = exclusiveInnerNodeGuard->spaceNeeded(sep_info.length, sizeof(SwipType));
-            if (exclusiveInnerNodeGuard->hasEnoughSpaceFor(space_needed_for_separator)) {  // Is there enough space in the parent
-               // for the separator?
-               exclusiveInnerNodeGuard->requestSpaceFor(space_needed_for_separator);
-               exclusiveInnerNodeGuard->getSep(sep_key, sep_info);
-
-               nodeLeft->setFences(getLowerFenceKey(), lower_fence.length, sepKey, sepLength);
-               leaf->setFences(sep_key, sep_info.length, getUpperFenceKey(), upper_fence.length);
-               exclusiveInnerNodeGuard->insert(sep_key, sep_info.length, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
-            }
-
-
-            exclusiveInnerNodeGuard.ptr().set
-*/
-
             exclusiveInnerNodeGuard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
             // insert done
             this->pageCount++;
