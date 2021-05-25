@@ -672,6 +672,8 @@ void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, Exclusive
             auto swip = leaf.swip();
             exclusiveInnerNodeGuard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
             // insert done
+            // TODO: does swip().evict make sense?
+            leaf.swip().evict(leaf.swip().pid);
             this->pageCount++;
             jumpmu_return;
          }

@@ -125,12 +125,14 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
    while (true) {
       jumpmuTry()
       {
+         //TODO: maybe allocate new Page from BMC::global_bf instead with HybridPageGuard (because this way we need to set buffer frame specifics, e.g. keep_in_memory)
             auto new_node_h = HybridPageGuard<btree::BTreeNode>(btree.dt_id);
             auto new_node = ExclusivePageGuard<btree::BTreeNode>(std::move(new_node_h));
             new_node.init(true);
 
             new_node->type = LSM_TYPE::BTree;
             new_node->level = btree.level;
+            new_node.getBufferFrame()->header.keep_in_memory = false;
 
             //prefix in this node (key with "http://..." to "https://..." would have the prefix "http" with length 4
             new_node->prefix_length = commonPrefix(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen,
@@ -147,13 +149,19 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
                                   entries->back().keyLen);
             new_node->makeHint();
 
-            btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
-
+            while (true) {
+               jumpmuTry()
+               {
+                  btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+                  jumpmu_break;
+               }
+               jumpmuCatch() {cout << "insertLeafNodeNew" << endl; }
+            }
             //cout << "Node Buffer: " << new_node.getBufferFrame() << endl;
 
             jumpmu_break;
       }
-      jumpmuCatch() {}
+      jumpmuCatch() { }
    }
 }
 
@@ -182,7 +190,7 @@ unsigned bufferPayloadNew(LSMBTreeMergeIteratorNew& a, vector<uint8_t>& payloadS
 }
 
 // aTree is the root node (not the meta node!) of the first tree, bTree the root node of the second tree (may be null)
-unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL* bTree)
+unique_ptr<StaticBTree> LSM::mergeTreesNew(unique_ptr<StaticBTree>& levelToReplace, btree::BTreeLL* aTree, btree::BTreeLL* bTree)
 {
    auto newTree = make_unique<StaticBTree>();
 
@@ -194,10 +202,15 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
    DataStructureIdentifier dsi = DataStructureIdentifier();
    dsi.type = LSM_TYPE::BTree;
 
-   if (bTree == NULL) { // we create the first level on disk, so the new merged tree has level 0 on disk
+   if (bTree == NULL && aTree->type == LSM_TYPE::InMemoryBTree) { // we create the first level on disk, so the new merged tree has level 0 on disk
       newTree->tree.level = 0;
       newTree->filter.level = 0;
       dsi.level = 0;
+   }
+   else if (bTree == NULL && aTree->type==LSM_TYPE::BTree) {
+      newTree->tree.level = aTree->level + 1;
+      newTree->filter.level = aTree->level + 1;
+      dsi.level = aTree->level + 1;
    }
    else { // aTree is to large for level i, so its merged into bTree which resides at level i+1
       newTree->tree.level = bTree->level;
@@ -207,27 +220,36 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
 
    jumpmuTry()
    {
-      // create new meta_node (could even pick the meta_node of aTree or bTree, but here we only know the root of these two trees, not the meta node)
-      auto& newMetaNode = BMC::global_bf->allocatePage();
-      Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
-      newMetaNode.header.keep_in_memory = true;
-      newMetaNode.page.dt_id = this->dt_id;
-      ((btree::BTreeNode*)newMetaNode.page.dt)->type = dsi.type;
-      ((btree::BTreeNode*)newMetaNode.page.dt)->level = dsi.level;
-      guard.unlock();
+      while (true) {
+         jumpmuTry()
+         {
+            // create new meta_node (could even pick the meta_node of aTree or bTree, but here we only know the root of these two trees, not the meta node)
+            auto& newMetaNode = BMC::global_bf->allocatePage();
+            Guard guard(newMetaNode.header.latch, GUARD_STATE::EXCLUSIVE);
+            newMetaNode.header.keep_in_memory = true;
+            newMetaNode.page.dt_id = this->dt_id;
+            ((btree::BTreeNode*)newMetaNode.page.dt)->type = dsi.type;
+            ((btree::BTreeNode*)newMetaNode.page.dt)->level = dsi.level;
+            guard.unlock();
 
-      newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
+            newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
+            jumpmu_break;
+         }
+         jumpmuCatch() {cout << "error meta"<<endl;}
+      }
 
       btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
       btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
       rootNode->is_leaf = false;
+
       BufferFrame* rootMerker;
 
-      if(bTree == NULL) {
+      if(bTree == nullptr) {
          // we need a dummy node (upper ptr)
          HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
          HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
          rootNode->upper = rootPg.swip();
+         rootPg.bufferFrame->header.keep_in_memory = true;
          rootMerker = rootPg.bufferFrame;
          rootPg.unlock();
          pg.unlock();
@@ -246,6 +268,9 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
       newTree->tree.pageCount = 2; //root node + upper dummy node (does not contain the pages of the old tree)
       newTree->tree.height = 2; //root node + upper dummy node/old tree root
 
+      levelToReplace = std::move(newTree);
+      merge_mutex.unlock();
+
       uint64_t entryCount = 0;
 
       unsigned totalKeySize = 0;
@@ -259,8 +284,8 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
       keyStorage->reserve(btree::btreePageSize * 2);
       payloadStorage->reserve(btree::btreePageSize * 2);
 
-      LSMBTreeMergeIteratorNew aTreeLSMIterator(*aTree, newTree->tree);
-      LSMBTreeMergeIteratorNew bTreeLSMIterator(*bTree, newTree->tree);
+      LSMBTreeMergeIteratorNew aTreeLSMIterator(*aTree, levelToReplace->tree);
+      LSMBTreeMergeIteratorNew bTreeLSMIterator(*bTree, levelToReplace->tree);
       LSMBTreeMergeIteratorNew* iterator;
 
       aTreeLSMIterator.moveToFirstLeaf();
@@ -283,15 +308,15 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
                // all entries processed, create last page and exit
                entryCount += kvEntries->size();
                // TODO: better buildNode with upper replacement (does not split the node which would cause the problem with the node-count=1)
-               buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);
+               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree);
                //cout << "*** Builded last node ***" << endl;
 
-               assert(((btree::BTreeNode*)((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
+               assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
                // create BloomFilter
-               /*newTree->filter.init(entryCount);
+               /*levelToReplace->filter.init(entryCount);
                for (auto h : hashes)
-                  newTree->filter.insert(h);*/
+                  levelToReplace->filter.insert(h);*/
 
 
                // merge done
@@ -302,53 +327,58 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
                // We need to set the highest upper ptr correct (pointed to imMemBtree-Root if bTree was NULL or to the old tier root)
                // the old tree of tier[i] is set as the highest upper ptr in the new tree at tier[i]
                // therefore we must remove this old root like the dummy node and set the pointers in its parent node in the new tree correct
-               HybridPageGuard<btree::BTreeNode> upperNode = HybridPageGuard<btree::BTreeNode>(newTree->tree.meta_node_bf);
-               HybridPageGuard<btree::BTreeNode> currentNode(upperNode, upperNode->upper);
-               assert(rootMerker->header.keep_in_memory);
-               if(bTree != NULL) {
-                  assert(rootMerker == ((btree::BTreeNode*)bTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
-               }
-               else {
-                  assert(rootMerker == ((btree::BTreeNode*)aTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
-               }
-               while (currentNode.bufferFrame != rootMerker) {
-                  upperNode = std::move(currentNode);
-                  Swip<btree::BTreeNode>* childToFollow = &upperNode->upper;
-                  currentNode = HybridPageGuard(upperNode, *childToFollow);
-               }
-               assert(currentNode.bufferFrame->header.keep_in_memory);
-               if (upperNode->count <= 1) {
-                  // TODO: Problem when we remove slot 0 -> count=0 and only upper ptr is set
-                  // We need to reclaim the currentNode and set the left child (slot0) as new root
-                  cout << "Count Root" << upperNode->count << endl;
-               }
-               assert(upperNode.bufferFrame != newTree->tree.meta_node_bf);
-               upperNode.toExclusive();
-               upperNode->upper = upperNode->getChild(upperNode->count-1);
 
-               assert(((btree::BTreeNode*)((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
+               jumpmuTry()
+               {
+                  HybridPageGuard<btree::BTreeNode> upperNode = HybridPageGuard<btree::BTreeNode>(levelToReplace->tree.meta_node_bf);
+                  HybridPageGuard<btree::BTreeNode> currentNode(upperNode, upperNode->upper);
+                  assert(rootMerker->header.keep_in_memory);
+                  if (bTree != NULL) {
+                     assert(rootMerker == ((btree::BTreeNode*)bTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
+                  } else {
+                     assert(rootMerker == ((btree::BTreeNode*)aTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
+                  }
+                  while (currentNode.bufferFrame != rootMerker) {
+                     upperNode = std::move(currentNode);
+                     Swip<btree::BTreeNode>* childToFollow = &upperNode->upper;
+                     currentNode = HybridPageGuard(upperNode, *childToFollow);
+                  }
+                  assert(currentNode.bufferFrame->header.keep_in_memory);
+                  if (upperNode->count <= 1) {
+                     // TODO: Problem when we remove slot 0 -> count=0 and only upper ptr is set
+                     // We need to reclaim the currentNode and set the left child (slot0) as new root
+                     cout << "Count Root" << upperNode->count << endl;
+                  }
+                  assert(upperNode.bufferFrame != levelToReplace->tree.meta_node_bf);
+                  upperNode.toExclusive();
+                  upperNode->upper = upperNode->getChild(upperNode->count - 1);
 
-               upperNode->removeSlot(upperNode->count-1);
+                  assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type ==
+                         LSM_TYPE::BTree);
 
-               // Reclaim the remaining meta & root nodes
-               HybridPageGuard<btree::BTreeNode> aTreeMetaNode = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
-               HybridPageGuard<btree::BTreeNode> aTreeRootNode(aTreeMetaNode, aTreeMetaNode->upper);
-               aTreeRootNode.toExclusive();
-               aTreeMetaNode.toExclusive();
-               aTreeRootNode.reclaim();
-               aTreeMetaNode.reclaim();
-               if (bTree != NULL) {
-                  HybridPageGuard<btree::BTreeNode> bTreeMetaNode = HybridPageGuard<btree::BTreeNode>(bTree->meta_node_bf);
-                  HybridPageGuard<btree::BTreeNode> bTreeRootNode(bTreeMetaNode, bTreeMetaNode->upper);
-                  bTreeRootNode.toExclusive();
-                  bTreeMetaNode.toExclusive();
-                  bTreeRootNode.reclaim();
-                  bTreeMetaNode.reclaim();
+                  upperNode->removeSlot(upperNode->count - 1);
+
+                  // Reclaim the remaining meta & root nodes
+                  HybridPageGuard<btree::BTreeNode> aTreeMetaNode = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
+                  HybridPageGuard<btree::BTreeNode> aTreeRootNode(aTreeMetaNode, aTreeMetaNode->upper);
+                  aTreeRootNode.toExclusive();
+                  aTreeMetaNode.toExclusive();
+                  aTreeRootNode.reclaim();
+                  aTreeMetaNode.reclaim();
+                  if (bTree != NULL) {
+                     HybridPageGuard<btree::BTreeNode> bTreeMetaNode = HybridPageGuard<btree::BTreeNode>(bTree->meta_node_bf);
+                     HybridPageGuard<btree::BTreeNode> bTreeRootNode(bTreeMetaNode, bTreeMetaNode->upper);
+                     bTreeRootNode.toExclusive();
+                     bTreeMetaNode.toExclusive();
+                     bTreeRootNode.reclaim();
+                     bTreeMetaNode.reclaim();
+                  }
                }
+               jumpmuCatch() { cout << "freen" << endl;}
 
-               assert(((btree::BTreeNode*)((btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
+               assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
-               jumpmu_return newTree;
+               jumpmu_return nullptr;//levelToReplace;
             }
             iterator = &bTreeLSMIterator;
          } else if (bTreeLSMIterator.done) {
@@ -391,11 +421,12 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
          hashes->push_back(BloomFilter::hashKey(key, keyLen));
 
          unsigned prefix = commonPrefix(kvEntries->front().keyOffset + keyStorage->data(), kvEntries->front().keyLen, key, keyLen);
-         if (spaceNeeded(prefix, totalKeySize + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
+         // added one additional keyLen because of adding upperFence in buildNode
+         if (spaceNeeded(prefix, totalKeySize + keyLen + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
             // key does not fit, create new page
             kvEntries->pop_back();
             entryCount += kvEntries->size();
-            buildNode(kvEntries, keyStorage, payloadStorage, newTree->tree);  // could pick shorter separator here
+            buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree);  // could pick shorter separator here
             //cout << "Builded node" << endl;
             kvEntries->clear();
             keyStorage->clear();
@@ -416,7 +447,7 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL
       }
    }
    jumpmuCatch(){
-
+      cout << "Eroor" << endl;
    }
 }
 LSM::LSM() : inMemBTree(std::make_unique<btree::BTreeLL>()) {inMemBTree->type=LSM_TYPE::InMemoryBTree; inMemBTree->level = 0;}
@@ -435,18 +466,25 @@ void LSM::create(DTID dtid, BufferFrame* meta_bf)
    dsi.type = LSM_TYPE::InMemoryBTree;
    dsi.level = 0;
 
-   // create new metaPage for the In-memory BTree
-   auto& newMetaBufferPage = BMC::global_bf->allocatePage();
-   Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
-   newMetaBufferPage.header.keep_in_memory = true;
-   newMetaBufferPage.page.dt_id = dtid;
-   // set the dsi for the metaNode
-   ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = dsi.type;
-   ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = dsi.level;
-   guard.unlock();
+   while (true) {
+      jumpmuTry()
+      {
+         // create new metaPage for the In-memory BTree
+         auto& newMetaBufferPage = BMC::global_bf->allocatePage();
+         Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
+         newMetaBufferPage.header.keep_in_memory = true;
+         newMetaBufferPage.page.dt_id = dtid;
+         // set the dsi for the metaNode
+         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = dsi.type;
+         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = dsi.level;
+         guard.unlock();
 
-   // through the dsi.type=InMemBTree the create function of the GenericBTree creates pages with keepInMemory=true
-   this->inMemBTree->create(dtid, &newMetaBufferPage, &dsi);
+         // through the dsi.type=InMemBTree the create function of the GenericBTree creates pages with keepInMemory=true
+         this->inMemBTree->create(dtid, &newMetaBufferPage, &dsi);
+         jumpmu_break;
+      }
+      jumpmuCatch() {cout << "inMemBTree create" << endl; }
+   }
 
    // set the dsi for the InMemBTree of the LSM-Tree
    this->inMemBTree->type = dsi.type;
@@ -477,8 +515,10 @@ void LSM::mergeAll()
             // merge with next level
             StaticBTree& next = *tiers[i + 1];
 
-            // TODO: Maybe set nextTier = NULL, when its an empty tree? -> Have to set the root as keepInMemory, because its not a InMemTree (then have to set the level correct!=> bTree==NULL != level0)
-            tiers[i + 1] = mergeTreesNew(&curr.tree, &next.tree);
+            merge_mutex.lock();
+            bTreeInMerge = std::move(tiers[i + 1]);
+            mergeTreesNew(tiers[i+1], &curr.tree, &bTreeInMerge->tree);
+            bTreeInMerge.release();
 
             ensure(tiers[i+1]->tree.type == LSM_TYPE::BTree);
             ensure(tiers[i+1]->filter.type == LSM_TYPE::BloomFilter);
@@ -486,32 +526,17 @@ void LSM::mergeAll()
             ensure(tiers[i+1]->filter.level == i+1);
          } else {
             // new level
+            merge_mutex.lock();
+            tiers.emplace_back(nullptr);
+            mergeTreesNew(tiers[i+1], &curr.tree, nullptr);
+
             //cout << "neues level, jetzt: " << i+1 << " DTID: " << this->dt_id << " countEntries LSM: " << this->countEntries() <<endl;
-            tiers.emplace_back(move(tiers.back()));
             tiers[i+1]->tree.type = LSM_TYPE::BTree;
             tiers[i+1]->tree.level = i+1;
             tiers[i+1]->filter.type = LSM_TYPE::BloomFilter;
             tiers[i+1]->filter.level = i+1;
             ((btree::BTreeNode*)tiers[i+1]->tree.meta_node_bf->page.dt)->type = LSM_TYPE::BTree;
             ((btree::BTreeNode*)tiers[i+1]->tree.meta_node_bf->page.dt)->level = i+1;
-
-            // we need to set every BTreeNode->level to the new level i+1 since no mergeTrees was issued
-            // TODO: ATTENTION: if this iterateAllPages tries to find a unswizzled pointer it doesnt work, because the level in the node is i what causes an lookup in i and not i+1
-            tiers[i] = make_unique<StaticBTree>();
-            DataStructureIdentifier dsi = DataStructureIdentifier();
-            dsi.type = LSM_TYPE::BTree;
-            dsi.level = i;
-            // create new metaPage for the tiers[i] BTree
-            auto& newMetaBufferPage = BMC::global_bf->allocatePage();
-            Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
-            newMetaBufferPage.header.keep_in_memory = true;
-            newMetaBufferPage.page.dt_id = this->dt_id;
-            ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = dsi.type;
-            ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = dsi.level;
-            guard.unlock();
-            tiers[i]->tree.create(this->dt_id, &newMetaBufferPage, &dsi);
-            tiers[i]->tree.meta_node_bf = tiers[i+1]->tree.meta_node_bf;
-            tiers[i+1]->tree.iterateAllPages([i](btree::BTreeNode& innerNode) { innerNode.level = i+1; return 0; }, [i](btree::BTreeNode& leafNode) { leafNode.level = i+1; return 0; });
          }
 
          tiers[i] = make_unique<StaticBTree>();
@@ -520,21 +545,29 @@ void LSM::mergeAll()
          dsi.type = LSM_TYPE::BTree;
          dsi.level = i;
 
-         // create new metaPage for the tiers[i] BTree
-         auto& newMetaBufferPage = BMC::global_bf->allocatePage();
-         Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
-         newMetaBufferPage.header.keep_in_memory = true;
-         newMetaBufferPage.page.dt_id = this->dt_id;
-         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = dsi.type;
-         ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = dsi.level;
-         guard.unlock();
 
-         //create btree for level tiers[i]
-         tiers[i]->tree.create(this->dt_id, &newMetaBufferPage, &dsi);
-         tiers[i]->tree.type = dsi.type;
-         tiers[i]->tree.level = dsi.level;
-         tiers[i]->filter.type = LSM_TYPE::BloomFilter;
-         tiers[i]->filter.level = i;
+         while (true) {
+            jumpmuTry()
+            {
+               // create new metaPage for the tiers[i] BTree
+               auto& newMetaBufferPage = BMC::global_bf->allocatePage();
+               Guard guard(newMetaBufferPage.header.latch, GUARD_STATE::EXCLUSIVE);
+               newMetaBufferPage.header.keep_in_memory = true;
+               newMetaBufferPage.page.dt_id = this->dt_id;
+               ((btree::BTreeNode*)newMetaBufferPage.page.dt)->type = dsi.type;
+               ((btree::BTreeNode*)newMetaBufferPage.page.dt)->level = dsi.level;
+               guard.unlock();
+
+               // create btree for level tiers[i]
+               tiers[i]->tree.create(this->dt_id, &newMetaBufferPage, &dsi);
+               tiers[i]->tree.type = dsi.type;
+               tiers[i]->tree.level = dsi.level;
+               tiers[i]->filter.type = LSM_TYPE::BloomFilter;
+               tiers[i]->filter.level = i;
+               jumpmu_break;
+            }
+            jumpmuCatch() { cout << "meta mergeAll" << tiers[i]->tree.meta_node_bf << endl; }
+         }
       }
       limit = limit * factor;
    }
@@ -790,31 +823,33 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
    if (pageCount >= baseLimit) {
       // merge inMemory-BTree with first level BTree of LSM Tree
       this->levelInMerge = 0;
+      merge_mutex.lock();
+      // move full inMemBTree to inMemBTreeInMerge
+      this->inMemBTreeInMerge = std::move(inMemBTree);
+      // generate new empty inMemory BTree
+      this->create(this->dt_id, this->meta_node_bf);
 
       //cout << "pageCount >= baseLimit bei insertedKey" << insertedKey << endl;
 
-      // get the root node of the btree of level 0, if the level exists
-      btree::BTreeNode* old = tiers.size() ? (btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt : nullptr;
-
       // merge the two trees / pull the in-mem-tree down (if only in-mem-tree exists)
       unique_ptr<StaticBTree> neu;
-      if (old != nullptr) {
-         tiers[0] = mergeTreesNew(inMemBTree.get(), &tiers[0]->tree);
+      if (tiers.size()) {
+         bTreeInMerge = std::move(tiers[0]);
+         mergeTreesNew(tiers[0], inMemBTreeInMerge.get(), &bTreeInMerge->tree);
+         inMemBTreeInMerge.release();
+         bTreeInMerge.release();
          assert(((btree::BTreeNode*)((btree::BTreeNode*)tiers[0]->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
       }
       else {
-         // could also just emplace it back, then we would have no merge time, but the inMemBTree will not be compacted and we have to build the BloomFilter manually
-         tiers.emplace_back(move(mergeTreesNew(inMemBTree.get(), nullptr)));
+         // create first tier
+         tiers.emplace_back(nullptr);
+         mergeTreesNew(tiers[0], inMemBTreeInMerge.get(), nullptr);
       }
-      //cout << "mergeTrees() in insert, lower fence von neu: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getLowerFenceKey() << " upper fence: "<< ((btree::BTreeNode*)neu->tree.meta_node_bf->page.dt)->getUpperFenceKey() << endl;
 
       ensure(tiers[0]->tree.type == LSM_TYPE::BTree);
       ensure(tiers[0]->filter.type == LSM_TYPE::BloomFilter);
       ensure(tiers[0]->tree.level == 0);
       ensure(tiers[0]->filter.level == 0);
-
-      // generate new empty inMemory BTree
-      this->create(this->dt_id, this->meta_node_bf);
 
       // if necessary merge further levels
       mergeAll();
@@ -884,7 +919,6 @@ void LSM::iterateChildrenSwips(void*, BufferFrame& bufferFrame, std::function<bo
    callback(bTreeNode.upper.cast<BufferFrame>());
 }
 
-static int counterInMerge=0;
 struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
 {
    // check on which level the bufferFrame to find is (page.dt is type btreeNode or BloomFilterPage
@@ -893,30 +927,10 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
    u64 toFindLevel = dsl->level;
    LSM_TYPE toFindType = dsl->type;
    LSM* tree = static_cast<LSM*>(reinterpret_cast<LSM*>(lsm_object));
-/*
-   // check, if merge between two level is ongoing
-   if (tree->levelInMerge == toFindLevel) {//toFindLevel == tree->bTreeInMerge->level) {
-      counterInMerge++;
-      //cout << "Could not find parent counter: " << counterInMerge << endl;
-      jumpmu::jump();
-      if (toFindType != LSM_TYPE::InMemoryBTree && toFindLevel == tree->bTreeInMerge->level) {
-         // page to_find can be in old btree at toFindLevel or can be the new created btree
-         // TODO check old btree and btree in built
-         jumpmuTry() {
-            btree::BTreeLL* btreeLevel = &(tree->tiers[toFindLevel]->tree);
-            return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeLevel)), to_find);
-         }
-         jumpmuCatch(){// Not found in the level, Buffer Manager should retry and find another buffer frame
-            jumpmu::jump();
-            //could also check the currently in build tree:
-            //btree::BTreeLL* btreeLevel = tree->bTreeInMerge;
-            //return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeLevel)), to_find);
-         }
-      }
-      // else page to_find not in one of the merged trees (can be in the old InMemTree, or in levels which arent merged, ...)
-      // so continue normal
-   }
-*/
+
+   tree->merge_mutex.lock();
+   tree->merge_mutex.unlock();
+
    /*int retryCounter = 0;
    while (true) {
       jumpmuTry()
@@ -925,8 +939,10 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
             jumpmu::jump();
          }*/
          if (toFindType == LSM_TYPE::InMemoryBTree) {  // in-memory
-            btree::BTreeLL* btreeRootLSM = tree->inMemBTree.get();
-            return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeRootLSM)), to_find);
+            // in-Memory pages have set the keepInMemory flag
+            jumpmu::jump();
+            //btree::BTreeLL* btreeRootLSM = tree->inMemBTree.get();
+            //return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeRootLSM)), to_find);
          } else {  // on disk on level i
             // check which type bufferFrame is
             if (toFindType == LSM_TYPE::BTree) {  // BTree

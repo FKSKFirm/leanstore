@@ -38,7 +38,15 @@ struct LSM : public KeyValueInterface {
    std::vector<std::unique_ptr<StaticBTree>> tiers;
    DTID dt_id;
    BufferFrame* meta_node_bf;  // kept in memory
+
+   // 0 = inMemBTree with tiers[0], 1 = tiers[0] with tiers[1], ...
    int levelInMerge;
+   // if levelInMerge == 0, a new inMemBTree is created and the oldInMemBTree is moved to inMemBTreeInMerge
+   std::unique_ptr<btree::BTreeLL> inMemBTreeInMerge;
+   // if levelInMerge == 1, tiers[0] stays the old (maybe partially disassembled) bTree at level 0, tiers[1] is already the new bTree (with the highest upper ptr pointing to the old tier at level 1)
+   // and bTreeInMerge is the old tier at level 1
+   std::unique_ptr<StaticBTree> bTreeInMerge;
+   std::mutex merge_mutex;
 
    LSM();
    ~LSM();
@@ -49,7 +57,7 @@ struct LSM : public KeyValueInterface {
 
    // merges
    void mergeAll();
-   unique_ptr<StaticBTree> mergeTreesNew(btree::BTreeLL* aTree, btree::BTreeLL* bTree);
+   unique_ptr<StaticBTree> mergeTreesNew(unique_ptr<StaticBTree>& levelToReplace, btree::BTreeLL* aTree, btree::BTreeLL* bTree);
 
    // returns true when the key is found in the inMemory BTree (Root of LSM-Tree)
    //bool lookup(uint8_t* key, unsigned keyLength);

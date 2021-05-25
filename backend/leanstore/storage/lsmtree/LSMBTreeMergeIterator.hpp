@@ -69,7 +69,7 @@ namespace leanstore
                      assert(keyBefore+1 == __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31));
                      jumpmu_break;
                   }
-                  jumpmuCatch() {cout<<"something happened during move to first leaf"<<endl;}
+                  jumpmuCatch() { }
                }
             }
 
@@ -138,7 +138,7 @@ namespace leanstore
                         }
                      }
                   }
-                  jumpmuCatch() {cout<<"something happened nextLeaf"<<endl;}
+                  jumpmuCatch() { }
                }
             }
 
@@ -147,107 +147,6 @@ namespace leanstore
             unsigned getKeyLen() { return leaf->slot[positionInNode].key_len; }
             uint8_t* getPayload() { return leaf->getPayload(positionInNode); }
             unsigned getPayloadLen() { return leaf->getPayloadLength(positionInNode); }
-         };
-
-
-
-
-
-         struct LSMBTreeMergeIterator {
-            // vector of BTreeNode and position of the current entry in this node (slotID)
-            JMUW<vector<HybridPageGuard<btree::BTreeNode>*>> nodeList;
-            JMUW<vector<int>> positions;
-
-
-            LSMBTreeMergeIterator(HybridPageGuard<btree::BTreeNode>& node)
-            {
-               // If no further node or no entries in node, return
-               if ((((btree::BTreeNode*)node.bufferFrame->page.dt)->is_leaf && ((btree::BTreeNode*)node.bufferFrame->page.dt)->count == 0))
-                  return;
-               // add the node to the stack
-               //nodeList->push_back(node);
-               positions->push_back(-1);
-               // move to the next entry
-               ++(*this);
-            }
-
-            bool done() { return nodeList->empty(); }
-            bool getDeletionFlag() { return ((btree::BTreeNode*)nodeList->back()->bufferFrame->page.dt)->isDeleted(positions->back()); }
-            uint8_t* getKey() { return ((btree::BTreeNode*)nodeList->back()->bufferFrame->page.dt)->getKey(positions->back()); }
-            unsigned getKeyLen() { return ((btree::BTreeNode*)nodeList->back()->bufferFrame->page.dt)->slot[positions->back()].key_len; }
-            uint8_t* getPayload() { return ((btree::BTreeNode*)nodeList->back()->bufferFrame->page.dt)->getPayload(positions->back()); }
-            unsigned getPayloadLen() { return ((btree::BTreeNode*)nodeList->back()->bufferFrame->page.dt)->getPayloadLength(positions->back()); }
-
-            // returns the last BTreeNode in the stack
-            HybridPageGuard<btree::BTreeNode>& operator*() { return *nodeList.obj.back(); }
-            HybridPageGuard<btree::BTreeNode>* operator->() { return &(operator*()); }
-
-            // redefinition of operator ++ behaves like adding the next BTree nodes to the stack
-            LSMBTreeMergeIterator& operator++()
-            {
-               while (!nodeList->empty()) {
-                  // get the last BTreeNode in the stack
-                  HybridPageGuard<btree::BTreeNode>* node = nodeList->back();
-                  node->recheck();
-                  // get the latest position in this BTreeNode
-                  int& pos = positions->back();
-                  if (((btree::BTreeNode*)node->bufferFrame->page.dt)->is_leaf) {
-                     // leaf node
-                     if (pos + 1 < ((btree::BTreeNode*)node->bufferFrame->page.dt)->count) {
-                        // next entry in leaf
-                        pos++;
-                        return *this;
-                     }
-                     // remove leaf node when all node entries of him are processed
-                     while(true) {
-                        jumpmuTry()
-                           {
-                              node->toExclusive();
-                              node->reclaim();
-                              nodeList->pop_back();
-                              positions->pop_back();
-                              jumpmu_break;
-                           }
-                        jumpmuCatch() {}
-                     }
-                  } else {
-                     // inner node
-                     if (pos + 1 < ((btree::BTreeNode*)node->bufferFrame->page.dt)->count) {
-                        // down
-                        pos++;
-                        // add child at pos to the stack
-                        Swip<btree::BTreeNode> oneChild = ((btree::BTreeNode*)node->bufferFrame->page.dt)->getChild(pos);
-                        HybridPageGuard oneChildPG = HybridPageGuard<btree::BTreeNode>(oneChild.bf);
-                        oneChildPG.guard.state = GUARD_STATE::MOVED;
-                        nodeList->push_back(&oneChildPG);
-                        positions->push_back(-1);
-                     } else if (pos + 1 == ((btree::BTreeNode*)node->bufferFrame->page.dt)->count) {
-                        // down (upper)
-                        pos++;
-                        // add last child with the highest values to the stack
-                        Swip<btree::BTreeNode> oneChild = ((btree::BTreeNode*)node->bufferFrame->page.dt)->upper;
-                        HybridPageGuard oneChildPG = HybridPageGuard<btree::BTreeNode>(oneChild.bf);
-                        oneChildPG.guard.state = GUARD_STATE::MOVED;
-                        nodeList->push_back(&oneChildPG);
-                        positions->push_back(-1);
-                     } else {
-                        // up
-                        while(true) {
-                           jumpmuTry()
-                           {
-                              node->toExclusive();
-                              node->reclaim();
-                              nodeList->pop_back();
-                              positions->pop_back();
-                              jumpmu_break;
-                           }
-                           jumpmuCatch() {}
-                        }
-                     }
-                  }
-               }
-               return *this;
-            }
          };
       }
    }
