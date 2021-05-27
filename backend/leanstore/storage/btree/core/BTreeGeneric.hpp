@@ -68,7 +68,6 @@ class BTreeGeneric
       while (!target_guard->is_leaf) {
          // search in current node (target_guard) to correct link to child
          Swip<BTreeNode>& c_swip = target_guard->lookupInner(key, key_length);
-         //
          p_guard = std::move(target_guard);
          if (level == height - 1) {
             target_guard = HybridPageGuard(p_guard, c_swip, mode);
@@ -106,7 +105,6 @@ class BTreeGeneric
    inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard) { return meta_node_bf == guard.getBufferFrame(); }
    s64 iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
    s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
-   s64 releaseAllPagesRec(HybridPageGuard<BTreeNode>& node_guard);
    u64 countInner();
    u64 countPages();
    u64 countEntries();
@@ -115,8 +113,6 @@ class BTreeGeneric
    u32 bytesFree();
    void printInfos(uint64_t totalSize);
    void create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifier* dsi);
-
-   void insertLeafNode(uint8_t* key, unsigned int keyLength, ExclusivePageGuard<BTreeNode>& leaf);
    void insertLeafNodeNew(uint8_t* key, unsigned int keyLength, ExclusivePageGuard<BTreeNode>& leaf);
 };
 // -------------------------------------------------------------------------------------
