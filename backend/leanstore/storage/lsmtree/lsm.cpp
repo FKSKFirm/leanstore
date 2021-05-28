@@ -159,7 +159,9 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
          while (true) {
             jumpmuTry()
             {
+               FLAGS_bulk_insert = true;
                btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+               FLAGS_bulk_insert = false;
                jumpmu_break;
             }
             jumpmuCatch() { }
