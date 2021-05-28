@@ -155,7 +155,7 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
                   btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
                   jumpmu_break;
                }
-               jumpmuCatch() {cout << "insertLeafNodeNew" << endl; }
+               jumpmuCatch() { }
             }
             //cout << "Node Buffer: " << new_node.getBufferFrame() << endl;
 
@@ -235,7 +235,7 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(unique_ptr<StaticBTree>& levelToRepla
             newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
             jumpmu_break;
          }
-         jumpmuCatch() {cout << "error meta"<<endl;}
+         jumpmuCatch() { }
       }
 
       btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
@@ -483,7 +483,7 @@ void LSM::create(DTID dtid, BufferFrame* meta_bf)
          this->inMemBTree->create(dtid, &newMetaBufferPage, &dsi);
          jumpmu_break;
       }
-      jumpmuCatch() {cout << "inMemBTree create" << endl; }
+      jumpmuCatch() {  }
    }
 
    // set the dsi for the InMemBTree of the LSM-Tree
@@ -686,26 +686,134 @@ OP_RESULT LSM::remove(u8* key, u16 keyLength)
    }
 }
 
+// scans ascending beginning with start_key
+// callback function should return false when scanned the desired range and true when the scan should go further
 OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
 {
-   //TODO: Scan all trees (parallel?) and take the smallest Element and if more versions across the levels exist take the newest
+   //TODO: Scan all trees parallel
+   Slice searchKey(start_key, key_length);
 
-   Slice key(start_key, key_length);
+   cout << "Before scanAsc: " << jumpmu::checkpoint_counter << endl;
+
+   btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
+   bool inMemMoveNext;
+   basic_string_view<u8> inMemSlice;
+
+
+   btree::BTreeSharedIterator tierIterators[tiers.size()];
+   for (int i = 0; i < tiers.size(); i++) {
+      // initialize
+      tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
+   }
+   bool tiersMoveNext[tiers.size()];
+   basic_string_view<u8> tierSlices[tiers.size()];
+
    jumpmuTry()
    {
-      btree::BTreeSharedIterator iterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
-      auto ret = iterator.seek(key);
+      //************** Initialization *****************
+      inMemMoveNext = false;
+      auto ret = inMemBTreeIterator.seek(searchKey);
       if (ret != OP_RESULT::OK) {
-         jumpmu_return ret;
+         // no suitable value found in the inMemBTree
+         inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+      } else {
+         inMemSlice = inMemBTreeIterator.key();
       }
-      while (true) {
-         auto key = iterator.key();
-         auto value = iterator.value();
-         if (!callback(key.data(), key.length(), value.data(), value.length())) {
-            jumpmu_return OP_RESULT::OK;
+
+      for (int i = 0; i < tiers.size(); i++) {
+         // check levels
+         tiersMoveNext[i] = false;
+         auto ret = tierIterators[i].seek(searchKey);
+         if (ret != OP_RESULT::OK) {
+            // no suitable value found in this level
+            tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
          } else {
-            if (iterator.next() != OP_RESULT::OK) {
-               jumpmu_return OP_RESULT::NOT_FOUND;
+            tierSlices[i] = tierIterators[i].key();
+         }
+      }
+
+      //*************** Loop for searching next higher keys ****************
+      while (true) {
+         if (inMemMoveNext) {
+            // checkInMemBtree
+            inMemMoveNext = false;
+            auto ret = inMemBTreeIterator.next();
+            if (ret != OP_RESULT::OK) {
+               // no suitable value found in the inMemBTree
+               inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+            } else {
+               inMemSlice = inMemBTreeIterator.key();
+            }
+         }
+
+         for (int i = 0; i < tiers.size(); i++) {
+            if (tiersMoveNext[i]) {
+               // check levels
+               tiersMoveNext[i] = false;
+               auto ret = tierIterators[i].next();
+               if (ret != OP_RESULT::OK) {
+                  // no suitable value found in this level
+                  tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+               } else {
+                  tierSlices[i] = tierIterators[i].key();
+               }
+            }
+         }
+
+         //************ Find smallest value *****************
+
+         // smallest Key in Level (-1 = inMemBTree, 0 = tiers[0])
+         int smallestValue = -1;
+         Slice nextValue = inMemSlice;
+
+         for (int i = 0; i < tiers.size(); i++) {
+            // eliminate old entries when the key is the same
+            // get the lowest key and call the callback function
+            // next() for:
+            //    iterator with lowest key
+            //    iterator with duplicates (old entries)
+            // no next() for those who:
+            //    already havent found a suitable value
+            //    have found a value but theirs wasnt the lowest value
+
+            if (tierSlices[i].empty()) {
+               continue;
+            }
+
+            if (nextValue.empty()) {
+               // no value found in the levels before
+               nextValue = tierSlices[i];
+               smallestValue = i;
+            } else if (tierSlices[i].data() < nextValue.data()) {
+               // lower key found
+               nextValue = tierSlices[i];
+               smallestValue = i;
+            } else if (tierSlices[i].data() == nextValue.data()) {
+               // same key found (old version), can move to next entry in this tier
+               tiersMoveNext[i] = true;
+            } else {
+               // key in level in larger than the smallest key, may be evaluated in one of the next loops
+            }
+         }
+
+         //************* Evaluation of the lowest key **************
+         if (inMemSlice.empty() && smallestValue == -1) {
+            jumpmu_return OP_RESULT::NOT_FOUND;
+         } else if (smallestValue == -1) {
+            auto key = inMemBTreeIterator.key();
+            auto value = inMemBTreeIterator.value();
+            if (!callback(key.data(), key.length(), value.data(), value.length())) {
+               jumpmu_return OP_RESULT::OK;
+            } else {
+               inMemMoveNext = true;
+            }
+         } else {
+            auto key = tierIterators[smallestValue].key();
+            auto value = tierIterators[smallestValue].value();
+            if (!callback(key.data(), key.length(), value.data(), value.length())) {
+               jumpmu_return OP_RESULT::OK;
+            } else {
+               tiersMoveNext[smallestValue] = true;
             }
          }
       }
@@ -715,24 +823,129 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
 
 OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
 {
-   //TODO: Scan all trees (parallel?) and take the biggest Element and if more than one version exists across the levels, take the newest
+   Slice searchKey(start_key, key_length);
 
-   Slice key(start_key, key_length);
+   cout << "Before scanDesc: " << jumpmu::checkpoint_counter << endl;
+
+   btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
+   bool inMemMoveNext;
+   basic_string_view<u8> inMemSlice;
+
+   btree::BTreeSharedIterator tierIterators[tiers.size()];
+   for (int i = 0; i < tiers.size(); i++) {
+      // initialize
+      tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
+   }
+   bool tiersMoveNext[tiers.size()];
+   basic_string_view<u8> tierSlices[tiers.size()];
+
    jumpmuTry()
    {
-      btree::BTreeSharedIterator iterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
-      auto ret = iterator.seekForPrev(key);
+      //************** Initialization *****************
+      inMemMoveNext = false;
+      auto ret = inMemBTreeIterator.seekForPrev(searchKey);
       if (ret != OP_RESULT::OK) {
-         jumpmu_return ret;
+         // no suitable value found in the inMemBTree
+         inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+      } else {
+         inMemSlice = inMemBTreeIterator.key();
       }
-      while (true) {
-         auto key = iterator.key();
-         auto value = iterator.value();
-         if (!callback(key.data(), key.length(), value.data(), value.length())) {
-            jumpmu_return OP_RESULT::OK;
+
+      for (int i = 0; i < tiers.size(); i++) {
+         // check levels
+         tiersMoveNext[i] = false;
+         auto ret = tierIterators[i].seekForPrev(searchKey);
+         if (ret != OP_RESULT::OK) {
+            // no suitable value found in this level
+            tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
          } else {
-            if (iterator.prev() != OP_RESULT::OK) {
-               jumpmu_return OP_RESULT::NOT_FOUND;
+            tierSlices[i] = tierIterators[i].key();
+         }
+      }
+
+      //*************** Loop for searching further Keys ****************
+      while (true) {
+         if (inMemMoveNext) {
+            // checkInMemBtree
+            inMemMoveNext = false;
+            auto ret = inMemBTreeIterator.prev();
+            if (ret != OP_RESULT::OK) {
+               // no suitable value found in the inMemBTree
+               inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+            } else {
+               inMemSlice = inMemBTreeIterator.key();
+            }
+         }
+
+         for (int i = 0; i < tiers.size(); i++) {
+            if (tiersMoveNext[i]) {
+               // check levels
+               tiersMoveNext[i] = false;
+               auto ret = tierIterators[i].prev();
+               if (ret != OP_RESULT::OK) {
+                  // no suitable value found in this level
+                  tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+               } else {
+                  tierSlices[i] = tierIterators[i].key();
+               }
+            }
+         }
+
+         //************ Find highest value *****************
+
+         // highest Key in Level (-1 = inMemBTree, 0 = tiers[0])
+         int highestValue = -1;
+         Slice nextValue = inMemSlice;
+
+         for (int i = 0; i < tiers.size(); i++) {
+            // eliminate old entries when the key is the same
+            // get the lowest key and call the callback function
+            // next() for:
+            //    iterator with lowest key
+            //    iterator with duplicates (old entries)
+            // no next() for those who:
+            //    already havent found a suitable value
+            //    have found a value but theirs wasnt the lowest value
+
+            if (tierSlices[i].empty()) {
+               continue;
+            }
+
+            if (nextValue.empty()) {
+               // no value found in the levels before
+               nextValue = tierSlices[i];
+               highestValue = i;
+            } else if (tierSlices[i].data() > nextValue.data()) {
+               // higher key found
+               nextValue = tierSlices[i];
+               highestValue = i;
+            } else if (tierSlices[i].data() == nextValue.data()) {
+               // same key found (old version), can move to next entry in this tier
+               tiersMoveNext[i] = true;
+            } else {
+               // key in level in smaller than the highest key, may be evaluated in one of the next loops
+            }
+         }
+
+
+         //************* Evaluation of the highest key **************
+         if (inMemSlice.empty() && highestValue == -1) {
+            jumpmu_return OP_RESULT::NOT_FOUND;
+         } else if (highestValue == -1) {
+            auto key = inMemBTreeIterator.key();
+            auto value = inMemBTreeIterator.value();
+            if (!callback(key.data(), key.length(), value.data(), value.length())) {
+               jumpmu_return OP_RESULT::OK;
+            } else {
+               inMemMoveNext = true;
+            }
+         } else {
+            auto key = tierIterators[highestValue].key();
+            auto value = tierIterators[highestValue].value();
+            if (!callback(key.data(), key.length(), value.data(), value.length())) {
+               jumpmu_return OP_RESULT::OK;
+            } else {
+               tiersMoveNext[highestValue] = true;
             }
          }
       }
@@ -860,6 +1073,28 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
 // searches for an value in the LSM tree, returns OK or NOT_FOUND (hides LSM_DELETED)
 OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> payload_callback)
 {
+   DEBUG_BLOCK()
+   {
+      int okCounter = 0;
+      OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, payload_callback);
+      if (lookupResult == OP_RESULT::OK)
+         okCounter++;
+      else if (lookupResult == OP_RESULT::LSM_DELETED)
+         return OP_RESULT::NOT_FOUND;
+
+      // optional: parallel lookup with queue
+      for (unsigned i = 0; i < tiers.size(); i++) {
+         // TODO enable filter lookup again
+         // if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
+         lookupResult = tiers[i]->tree.lookup(key, keyLength, payload_callback);
+         if (lookupResult == OP_RESULT::OK)
+            okCounter++;
+         else if (lookupResult == OP_RESULT::LSM_DELETED)
+            return OP_RESULT::NOT_FOUND;
+      }
+      assert(okCounter==1);
+   }
+
    //case1: key found in inMemTree
    //     case1.1: with deletion marker -> Not found
    //     case1.2: normal entry -> OK
