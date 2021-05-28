@@ -693,23 +693,21 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
    //TODO: Scan all trees parallel
    Slice searchKey(start_key, key_length);
 
-   cout << "Before scanAsc: " << jumpmu::checkpoint_counter << endl;
-
-   btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
-   bool inMemMoveNext;
-   basic_string_view<u8> inMemSlice;
-
-
-   btree::BTreeSharedIterator tierIterators[tiers.size()];
-   for (int i = 0; i < tiers.size(); i++) {
-      // initialize
-      tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
-   }
-   bool tiersMoveNext[tiers.size()];
-   basic_string_view<u8> tierSlices[tiers.size()];
-
    jumpmuTry()
    {
+      btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
+      bool inMemMoveNext;
+      basic_string_view<u8> inMemSlice;
+
+
+      btree::BTreeSharedIterator tierIterators[tiers.size()];
+      for (int i = 0; i < tiers.size(); i++) {
+         // initialize
+         tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
+      }
+      bool tiersMoveNext[tiers.size()];
+      basic_string_view<u8> tierSlices[tiers.size()];
+
       //************** Initialization *****************
       inMemMoveNext = false;
       auto ret = inMemBTreeIterator.seek(searchKey);
@@ -823,24 +821,23 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
 
 OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* key, u16 key_length, const u8* value, u16 value_length)> callback)
 {
+   //TODO: Scan all trees parallel
    Slice searchKey(start_key, key_length);
-
-   cout << "Before scanDesc: " << jumpmu::checkpoint_counter << endl;
-
-   btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
-   bool inMemMoveNext;
-   basic_string_view<u8> inMemSlice;
-
-   btree::BTreeSharedIterator tierIterators[tiers.size()];
-   for (int i = 0; i < tiers.size(); i++) {
-      // initialize
-      tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
-   }
-   bool tiersMoveNext[tiers.size()];
-   basic_string_view<u8> tierSlices[tiers.size()];
 
    jumpmuTry()
    {
+      btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
+      bool inMemMoveNext;
+      basic_string_view<u8> inMemSlice;
+
+      btree::BTreeSharedIterator tierIterators[tiers.size()];
+      for (int i = 0; i < tiers.size(); i++) {
+         // initialize
+         tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
+      }
+      bool tiersMoveNext[tiers.size()];
+      basic_string_view<u8> tierSlices[tiers.size()];
+
       //************** Initialization *****************
       inMemMoveNext = false;
       auto ret = inMemBTreeIterator.seekForPrev(searchKey);
@@ -1073,28 +1070,6 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
 // searches for an value in the LSM tree, returns OK or NOT_FOUND (hides LSM_DELETED)
 OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> payload_callback)
 {
-   DEBUG_BLOCK()
-   {
-      int okCounter = 0;
-      OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, payload_callback);
-      if (lookupResult == OP_RESULT::OK)
-         okCounter++;
-      else if (lookupResult == OP_RESULT::LSM_DELETED)
-         return OP_RESULT::NOT_FOUND;
-
-      // optional: parallel lookup with queue
-      for (unsigned i = 0; i < tiers.size(); i++) {
-         // TODO enable filter lookup again
-         // if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
-         lookupResult = tiers[i]->tree.lookup(key, keyLength, payload_callback);
-         if (lookupResult == OP_RESULT::OK)
-            okCounter++;
-         else if (lookupResult == OP_RESULT::LSM_DELETED)
-            return OP_RESULT::NOT_FOUND;
-      }
-      assert(okCounter==1);
-   }
-
    //case1: key found in inMemTree
    //     case1.1: with deletion marker -> Not found
    //     case1.2: normal entry -> OK

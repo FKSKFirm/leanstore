@@ -107,21 +107,6 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    count++;
    updateHint(slotId);
 
-   //Test the deletion flag for LSM Tree
-   DEBUG_BLOCK()
-   {
-      u16 beforePayloadLength = slot[slotId].payload_len;
-      setDeletedFlag(slotId);
-      bool isd = isDeleted(slotId);
-      assert(isd);
-      assert(slot[slotId].payload_len == std::numeric_limits<uint16_t>::max());
-
-      slot[slotId].payload_len = beforePayloadLength;
-
-      isd = isDeleted(slotId);
-      assert(!isd);
-   }
-
    return slotId;
    // -------------------------------------------------------------------------------------
    DEBUG_BLOCK()
