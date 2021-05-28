@@ -170,6 +170,10 @@ bool BTreeNode::merge(u16 slotId, ExclusivePageGuard<BTreeNode>& parent, Exclusi
       }
       copyKeyValueRange(&tmp, 0, 0, count);
       right->copyKeyValueRange(&tmp, count, 0, right->count);
+
+      tmp.type = parent->type;
+      tmp.level = parent->level;
+
       parent->removeSlot(slotId);
       memcpy(reinterpret_cast<u8*>(right.ptr()), &tmp, sizeof(BTreeNode));
       right->makeHint();
@@ -192,6 +196,10 @@ bool BTreeNode::merge(u16 slotId, ExclusivePageGuard<BTreeNode>& parent, Exclusi
       tmp.storeKeyValue(count, extraKey, extraKeyLength, reinterpret_cast<u8*>(&upper), sizeof(SwipType));
       tmp.count++;
       right->copyKeyValueRange(&tmp, tmp.count, 0, right->count);
+
+      tmp.type = parent->type;
+      tmp.level = parent->level;
+
       parent->removeSlot(slotId);
       tmp.upper = right->upper;
       tmp.makeHint();
