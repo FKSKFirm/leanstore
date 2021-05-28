@@ -13,7 +13,7 @@ namespace leanstore
    {
       namespace lsmTree
       {
-         struct LSMBTreeMergeIteratorNew {
+         struct LSMBTreeMerger {
 
             btree::BTreeGeneric& btree;
             btree::BTreeGeneric& newBtree;
@@ -21,10 +21,8 @@ namespace leanstore
             s32 positionInNode = -1;
             bool done = false;
 
-            int keyBefore = -1;
-
-            LSMBTreeMergeIteratorNew(btree::BTreeGeneric& oldTree, btree::BTreeGeneric& newTree) : btree(oldTree), newBtree(newTree) { }
-            ~LSMBTreeMergeIteratorNew() { leaf.unlock(); }
+            LSMBTreeMerger(btree::BTreeGeneric& oldTree, btree::BTreeGeneric& newTree) : btree(oldTree), newBtree(newTree) { }
+            ~LSMBTreeMerger() { leaf.unlock(); }
 
             void moveToFirstLeaf() {
                while (true) {
@@ -37,8 +35,6 @@ namespace leanstore
                      if (current_node->is_leaf && current_node->count == 0) {
                         // empty btree (only root as leaf exists and this node is empty)
                         parent_guard.unlock();
-                        //leaf = std::move(current_node);
-                        //cout << "Empty root: " << current_node.bufferFrame << " meta node: " << parent_guard.bufferFrame << endl;
                         done = true;
                         jumpmu_break;
                      }
@@ -61,12 +57,10 @@ namespace leanstore
                         jumpmu_break;
                      }
                      assert(current_node->count > 0);
-                     //assert(leaf.bufferFrame != current_node.bufferFrame);
                      parent_guard.unlock();
                      leaf = std::move(current_node);
                      leaf.toExclusive();
                      positionInNode = 0;
-                     assert(keyBefore+1 == __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31));
                      jumpmu_break;
                   }
                   jumpmuCatch() { }
@@ -105,7 +99,6 @@ namespace leanstore
                         // merge done
                         assert(leaf.bufferFrame != btree.meta_node_bf);
                         leaf.unlock();
-                        //leaf.reclaim();
                         done = true;
                         jumpmu_return false;
                      }

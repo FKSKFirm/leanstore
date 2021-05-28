@@ -92,7 +92,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       // set the upper pointer of the meta node of the btree to the new root
       p_x_guard->upper = new_root.getBufferFrame();
 
-      new_root->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
+      new_root->type = c_x_guard->type;
       new_root->level = c_x_guard->level;
       if (c_x_guard->type == LSM_TYPE::InMemoryBTree) {
          new_root.getBufferFrame()->header.keep_in_memory = true;
@@ -101,7 +101,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
       // -------------------------------------------------------------------------------------
       new_left_node.init(c_x_guard->is_leaf);
 
-      new_left_node->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
+      new_left_node->type = c_x_guard->type;
       new_left_node->level = c_x_guard->level;
       if (c_x_guard->type == LSM_TYPE::InMemoryBTree) {
          new_left_node.getBufferFrame()->header.keep_in_memory = true;
@@ -134,7 +134,7 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          auto exec = [&]() {
             new_left_node.init(c_x_guard->is_leaf);
 
-            new_left_node->type = c_x_guard->type; // TODO check c_x_guard or p_x_guard is correct
+            new_left_node->type = c_x_guard->type;
             new_left_node->level = c_x_guard->level;
             if (c_x_guard->type == LSM_TYPE::InMemoryBTree) {
                new_left_node.getBufferFrame()->header.keep_in_memory = true;

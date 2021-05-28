@@ -4,7 +4,6 @@
 
 #include <cassert>
 #include <utility>
-// TODO: which Stack size is correct? Because I use recursion in leafInsert
 #define JUMPMU_STACK_SIZE 20
 namespace jumpmu
 {

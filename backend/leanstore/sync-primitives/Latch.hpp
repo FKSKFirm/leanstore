@@ -99,7 +99,6 @@ struct Guard {
       // maybe only if state == optimistic
       assert(state == GUARD_STATE::OPTIMISTIC || version == latch->ref().load());
       if (state == GUARD_STATE::OPTIMISTIC && version != latch->ref().load()) {
-         //TODO: countPages() failes here when inserted between 900000 & 1 Mio in one BTree (restart of countPages())
          jumpmu::jump();
       }
    }

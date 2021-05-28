@@ -57,7 +57,7 @@ struct LSM : public KeyValueInterface {
 
    // merges
    void mergeAll();
-   unique_ptr<StaticBTree> mergeTreesNew(unique_ptr<StaticBTree>& levelToReplace, btree::BTreeLL* aTree, btree::BTreeLL* bTree);
+   unique_ptr<StaticBTree> mergeTrees(unique_ptr<StaticBTree>& levelToReplace, btree::BTreeLL* aTree, btree::BTreeLL* bTree);
 
    // returns true when the key is found in the inMemory BTree (Root of LSM-Tree)
    //bool lookup(uint8_t* key, unsigned keyLength);
