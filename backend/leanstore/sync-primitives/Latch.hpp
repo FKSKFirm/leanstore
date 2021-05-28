@@ -123,13 +123,8 @@ struct Guard {
       version = latch->ref().load();
       if ((version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT) {
          faced_contention = true;
-         int counter = 0;
          do {
             version = latch->ref().load();
-            counter++;
-            if (counter == 300000) {
-               jumpmu::jump();
-            }
          } while ((version & LATCH_EXCLUSIVE_BIT) == LATCH_EXCLUSIVE_BIT);
       }
       state = GUARD_STATE::OPTIMISTIC;

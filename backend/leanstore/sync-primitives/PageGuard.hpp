@@ -61,6 +61,8 @@ class HybridPageGuard
          guard.toOptimisticOrExclusive();
       } else if (if_contended == LATCH_FALLBACK_MODE::SHARED) {
          guard.toOptimisticOrShared();
+      } else if (if_contended == LATCH_FALLBACK_MODE::JUMP) {
+         guard.toOptimisticOrJump();
       }
       //TODO: if JUMPMU_STACK_SIZE is too small it fails here
       jumpmu_registerDestructor();

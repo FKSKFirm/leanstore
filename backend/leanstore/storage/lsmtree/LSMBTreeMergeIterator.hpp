@@ -109,10 +109,6 @@ namespace leanstore
 
                      if (parentNodeGuard.bufferFrame == btree.meta_node_bf) {
                         // merge done
-                        // TODO: Really reclaim the meta node here?
-                        //parentNodeGuard.reclaim();
-                        //TODO: really reclaim the old root node here?
-                        //leaf.toExclusive();
                         assert(leaf.bufferFrame != btree.meta_node_bf);
                         leaf.unlock();
                         //leaf.reclaim();

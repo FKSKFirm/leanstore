@@ -493,7 +493,7 @@ struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFra
       if (c_swip->isEVICTED()) {
          jumpmu::jump();
       }
-      c_guard = HybridPageGuard(p_guard, c_swip->cast<BTreeNode>());
+      c_guard = HybridPageGuard(p_guard, c_swip->cast<BTreeNode>(), LATCH_FALLBACK_MODE::JUMP);
       level++;
    }
    p_guard.unlock();
@@ -641,8 +641,7 @@ void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, Exclusive
             auto swip = leaf.swip();
             exclusiveInnerNodeGuard->insert(key, keyLength, reinterpret_cast<u8*>(&swip), sizeof(SwipType));
             // insert done
-            // TODO: does swip().evict make sense?
-            leaf.swip().evict(leaf.swip().pid);
+            // TODO: if possible, add leaf to cooling queue or write to ssd direct
             this->pageCount++;
             jumpmu_return;
          }

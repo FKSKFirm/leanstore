@@ -199,7 +199,6 @@ storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
    return btree;
 }
 
-// TODO -------------------------------------------------------------------------------------
 storage::lsmTree::LSM& LeanStore::registerLsmTree(string name)
 {
    assert(lsmTrees.find(name) == lsmTrees.end());
@@ -210,8 +209,6 @@ storage::lsmTree::LSM& LeanStore::registerLsmTree(string name)
    bf.header.keep_in_memory = true;
    bf.page.dt_id = dtid;
    guard.unlock();
-   //lsmTree.inMemBTree->create(dtid, &bf);
-   //TODO: instead create lsmTree as Datatype with
    lsmTree.create(dtid, &bf);
    return lsmTree;
 }
