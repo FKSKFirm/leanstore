@@ -34,6 +34,14 @@ static int cmpKeys(uint8_t* a, uint8_t* b, unsigned aLength, unsigned bLength)
    return (aLength - bLength);
 }
 
+static int cmpKeysString(Slice a, Slice b, unsigned aLength, unsigned bLength)
+{
+   int c = memcmp(a.data(), b.data(), min(aLength, bLength));
+   if (c)
+      return c;
+   return (aLength - bLength);
+}
+
 struct BTreeIterator {
    // vector of BTreeNode and position of the current entry in this node (slotID)
    JMUW<vector<pair<btree::BTreeNode*, int>>> stack;
@@ -125,41 +133,40 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
    while (true) {
       jumpmuTry()
       {
-         //TODO: maybe allocate new Page from BMC::global_bf instead with HybridPageGuard (because this way we need to set buffer frame specifics, e.g. keep_in_memory)
-            auto new_node_h = HybridPageGuard<btree::BTreeNode>(btree.dt_id);
-            auto new_node = ExclusivePageGuard<btree::BTreeNode>(std::move(new_node_h));
-            new_node.init(true);
+         auto new_node_h = HybridPageGuard<btree::BTreeNode>(btree.dt_id);
+         auto new_node = ExclusivePageGuard<btree::BTreeNode>(std::move(new_node_h));
+         new_node.init(true);
 
-            new_node->type = LSM_TYPE::BTree;
-            new_node->level = btree.level;
-            new_node.getBufferFrame()->header.keep_in_memory = false;
+         new_node->type = LSM_TYPE::BTree;
+         new_node->level = btree.level;
+         new_node.getBufferFrame()->header.keep_in_memory = false;
 
-            //prefix in this node (key with "http://..." to "https://..." would have the prefix "http" with length 4
-            new_node->prefix_length = commonPrefix(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen,
-                                              entries->front().keyOffset + keyStorage->data(), entries->front().keyLen);
-            for (unsigned i = 0; i < entries->size(); i++)
-               new_node->storeKeyValueWithDeletionMarker(i,
-                                  entries.obj[i].keyOffset + keyStorage->data(), entries.obj[i].keyLen,
-                                  entries.obj[i].payloadOffset + payloadStorage->data(), entries.obj[i].payloadLen,
-                                  entries.obj[i].deletionFlag);
-            new_node->count = entries->size();
-            new_node->insertFence(new_node->lower_fence, entries->back().keyOffset + keyStorage->data(),
-                                  new_node->prefix_length);  // XXX: could put prefix before last key and set upperfence
-            new_node->insertFence(new_node->upper_fence, entries->back().keyOffset + keyStorage->data(),
-                                  entries->back().keyLen);
-            new_node->makeHint();
+         //prefix in this node (key with "http://..." to "https://..." would have the prefix "http" with length 4
+         new_node->prefix_length = commonPrefix(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen,
+                                           entries->front().keyOffset + keyStorage->data(), entries->front().keyLen);
+         for (unsigned i = 0; i < entries->size(); i++)
+            new_node->storeKeyValueWithDeletionMarker(i,
+                               entries.obj[i].keyOffset + keyStorage->data(), entries.obj[i].keyLen,
+                               entries.obj[i].payloadOffset + payloadStorage->data(), entries.obj[i].payloadLen,
+                               entries.obj[i].deletionFlag);
+         new_node->count = entries->size();
+         new_node->insertFence(new_node->lower_fence, entries->back().keyOffset + keyStorage->data(),
+                               new_node->prefix_length);  // XXX: could put prefix before last key and set upperfence
+         new_node->insertFence(new_node->upper_fence, entries->back().keyOffset + keyStorage->data(),
+                               entries->back().keyLen);
+         new_node->makeHint();
 
-            while (true) {
-               jumpmuTry()
-               {
-                  btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
-                  jumpmu_break;
-               }
-               jumpmuCatch() { }
+         while (true) {
+            jumpmuTry()
+            {
+               btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+               jumpmu_break;
             }
-            //cout << "Node Buffer: " << new_node.getBufferFrame() << endl;
+            jumpmuCatch() { }
+         }
+         //cout << "Node Buffer: " << new_node.getBufferFrame() << endl;
 
-            jumpmu_break;
+         jumpmu_break;
       }
       jumpmuCatch() { }
    }
@@ -374,7 +381,7 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(unique_ptr<StaticBTree>& levelToRepla
                      bTreeMetaNode.reclaim();
                   }
                }
-               jumpmuCatch() { cout << "freen" << endl;}
+               jumpmuCatch() { }
 
                assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
@@ -446,9 +453,7 @@ unique_ptr<StaticBTree> LSM::mergeTreesNew(unique_ptr<StaticBTree>& levelToRepla
          }
       }
    }
-   jumpmuCatch(){
-      cout << "Eroor" << endl;
-   }
+   jumpmuCatch(){ }
 }
 LSM::LSM() : inMemBTree(std::make_unique<btree::BTreeLL>()) {inMemBTree->type=LSM_TYPE::InMemoryBTree; inMemBTree->level = 0;}
 
@@ -566,7 +571,7 @@ void LSM::mergeAll()
                tiers[i]->filter.level = i;
                jumpmu_break;
             }
-            jumpmuCatch() { cout << "meta mergeAll" << tiers[i]->tree.meta_node_bf << endl; }
+            jumpmuCatch() { }
          }
       }
       limit = limit * factor;
@@ -697,8 +702,7 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
    {
       btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
       bool inMemMoveNext;
-      basic_string_view<u8> inMemSlice;
-
+      Slice inMemSlice;
 
       btree::BTreeSharedIterator tierIterators[tiers.size()];
       for (int i = 0; i < tiers.size(); i++) {
@@ -706,16 +710,16 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
          tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
       }
       bool tiersMoveNext[tiers.size()];
-      basic_string_view<u8> tierSlices[tiers.size()];
+      Slice tierSlices[tiers.size()];
 
       //************** Initialization *****************
       inMemMoveNext = false;
       auto ret = inMemBTreeIterator.seek(searchKey);
       if (ret != OP_RESULT::OK) {
          // no suitable value found in the inMemBTree
-         inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+         inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""),0);
       } else {
-         inMemSlice = inMemBTreeIterator.key();
+         inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
       }
 
       for (int i = 0; i < tiers.size(); i++) {
@@ -724,9 +728,9 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
          auto ret = tierIterators[i].seek(searchKey);
          if (ret != OP_RESULT::OK) {
             // no suitable value found in this level
-            tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+            tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
          } else {
-            tierSlices[i] = tierIterators[i].key();
+            tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
          }
       }
 
@@ -738,9 +742,9 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
             auto ret = inMemBTreeIterator.next();
             if (ret != OP_RESULT::OK) {
                // no suitable value found in the inMemBTree
-               inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+               inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""), 0);
             } else {
-               inMemSlice = inMemBTreeIterator.key();
+               inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
             }
          }
 
@@ -751,9 +755,9 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
                auto ret = tierIterators[i].next();
                if (ret != OP_RESULT::OK) {
                   // no suitable value found in this level
-                  tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+                  tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
                } else {
-                  tierSlices[i] = tierIterators[i].key();
+                  tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
                }
             }
          }
@@ -782,11 +786,11 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
                // no value found in the levels before
                nextValue = tierSlices[i];
                smallestValue = i;
-            } else if (tierSlices[i].data() < nextValue.data()) {
+            } else if (cmpKeysString(tierSlices[i].data(), nextValue.data(), tierSlices[i].size(), nextValue.size()) < 0) {
                // lower key found
                nextValue = tierSlices[i];
                smallestValue = i;
-            } else if (tierSlices[i].data() == nextValue.data()) {
+            } else if (cmpKeysString(tierSlices[i].data(), nextValue.data(), tierSlices[i].size(), nextValue.size()) == 0) {
                // same key found (old version), can move to next entry in this tier
                tiersMoveNext[i] = true;
             } else {
@@ -798,16 +802,16 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
          if (inMemSlice.empty() && smallestValue == -1) {
             jumpmu_return OP_RESULT::NOT_FOUND;
          } else if (smallestValue == -1) {
-            auto key = inMemBTreeIterator.key();
-            auto value = inMemBTreeIterator.value();
+            Slice key = inMemBTreeIterator.key();
+            Slice value = inMemBTreeIterator.value();
             if (!callback(key.data(), key.length(), value.data(), value.length())) {
                jumpmu_return OP_RESULT::OK;
             } else {
                inMemMoveNext = true;
             }
          } else {
-            auto key = tierIterators[smallestValue].key();
-            auto value = tierIterators[smallestValue].value();
+            Slice key = tierIterators[smallestValue].key();
+            Slice value = tierIterators[smallestValue].value();
             if (!callback(key.data(), key.length(), value.data(), value.length())) {
                jumpmu_return OP_RESULT::OK;
             } else {
@@ -828,7 +832,7 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
    {
       btree::BTreeSharedIterator inMemBTreeIterator(*static_cast<btree::BTreeLL*>(inMemBTree.get()));
       bool inMemMoveNext;
-      basic_string_view<u8> inMemSlice;
+      Slice inMemSlice;
 
       btree::BTreeSharedIterator tierIterators[tiers.size()];
       for (int i = 0; i < tiers.size(); i++) {
@@ -836,16 +840,16 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
          tierIterators[i] = btree::BTreeSharedIterator(*static_cast<btree::BTreeLL*>(&tiers[i]->tree));
       }
       bool tiersMoveNext[tiers.size()];
-      basic_string_view<u8> tierSlices[tiers.size()];
+      Slice tierSlices[tiers.size()];
 
       //************** Initialization *****************
       inMemMoveNext = false;
       auto ret = inMemBTreeIterator.seekForPrev(searchKey);
       if (ret != OP_RESULT::OK) {
          // no suitable value found in the inMemBTree
-         inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+         inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""), 0);
       } else {
-         inMemSlice = inMemBTreeIterator.key();
+         inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
       }
 
       for (int i = 0; i < tiers.size(); i++) {
@@ -854,9 +858,9 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
          auto ret = tierIterators[i].seekForPrev(searchKey);
          if (ret != OP_RESULT::OK) {
             // no suitable value found in this level
-            tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+            tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
          } else {
-            tierSlices[i] = tierIterators[i].key();
+            tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
          }
       }
 
@@ -868,9 +872,9 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
             auto ret = inMemBTreeIterator.prev();
             if (ret != OP_RESULT::OK) {
                // no suitable value found in the inMemBTree
-               inMemSlice = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+               inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""), 0);
             } else {
-               inMemSlice = inMemBTreeIterator.key();
+               inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
             }
          }
 
@@ -881,9 +885,9 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
                auto ret = tierIterators[i].prev();
                if (ret != OP_RESULT::OK) {
                   // no suitable value found in this level
-                  tierSlices[i] = static_cast<basic_string_view<u8>>(reinterpret_cast<const unsigned char*>(""));
+                  tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
                } else {
-                  tierSlices[i] = tierIterators[i].key();
+                  tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
                }
             }
          }
@@ -912,11 +916,11 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
                // no value found in the levels before
                nextValue = tierSlices[i];
                highestValue = i;
-            } else if (tierSlices[i].data() > nextValue.data()) {
-               // higher key found
+            } else if (cmpKeysString(tierSlices[i].data(), nextValue.data(), tierSlices[i].size(), nextValue.size()) > 0) {//std::memcmp(tierSlices[i].data(), nextValue.data(),min(tierSlices[i].size(), nextValue.size()))) {
+               // larger key found
                nextValue = tierSlices[i];
                highestValue = i;
-            } else if (tierSlices[i].data() == nextValue.data()) {
+            } else if (cmpKeysString(tierSlices[i].data(), nextValue.data(), tierSlices[i].size(), nextValue.size()) == 0) {
                // same key found (old version), can move to next entry in this tier
                tiersMoveNext[i] = true;
             } else {

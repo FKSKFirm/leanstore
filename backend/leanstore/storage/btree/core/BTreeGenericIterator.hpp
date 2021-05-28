@@ -40,6 +40,10 @@ class BTreePessimisticIterator : public BTreePessimisticIteratorInterface
          leaf.unlock();
          btree->findLeafAndLatch<mode>(leaf, key, key_length);
          cur = leaf->lowerBound<false>(key, key_length);
+         if (cur == leaf->count) {
+            // In the LSM Tree tiers the upper bound is not 0, its the highest key
+            return false;
+         }
          return true;
       }
    }

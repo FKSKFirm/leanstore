@@ -863,21 +863,27 @@ int test_tx(Integer w_id)
    Varchar<test_t_size> textFromRecord;
 
 
-   if (urand(1, 100) <= 40) {
+   if (urand(1, 100) <= 0) {
       test.lookup1({w_id}, [&](const test_t& rec) {
         idFromRecord = rec.id;
         textFromRecord = rec.t_text;
       });
-   } else {
+   } else if (urand(1, 100) <= 0) {
       vector<Integer> ids;
-      test.scan({w_id}, [&](const test_t::Key& key, const test_t& rec) {
-        if (key.w_id == w_id) {
-           ids.push_back(rec.id);
-           return true;
-        }
-        return false;
+      test.scan({0}, [&](const test_t::Key& key, const test_t& rec) {
+        ids.push_back(key.w_id);
+        return true;
       });
       unsigned c_count = ids.size();
+      assert(c_count == w_id);
+   } else {
+       vector<Integer> ids;
+       test.scanDesc({w_id}, [&](const test_t::Key& key, const test_t& rec) {
+          ids.push_back(key.w_id);
+          return true;
+       });
+       unsigned c_count = ids.size();
+       assert(c_count == w_id);
    }
    return 0;
 }

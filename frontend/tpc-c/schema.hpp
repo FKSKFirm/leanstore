@@ -1,9 +1,9 @@
 /* ***************** Own Test begin ************************** */
 #define test_t_size 100
 struct test_t {
-   static constexpr int id = 0;
+   static constexpr int id = 99;
    struct Key {
-      static constexpr int id = 0;
+      static constexpr int id = 99;
       Integer w_id;
    };
    Varchar<test_t_size> t_text;

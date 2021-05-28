@@ -74,15 +74,9 @@ namespace leanstore
             }
 
             bool nextKV() {
-               keyBefore = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31);
-               leaf->getKeyLen(positionInNode);
-               leaf->getPayload(positionInNode);
-               leaf->getPayloadLength(positionInNode);
-
                assert(leaf->is_leaf);
                if (positionInNode+1 < leaf->count) {
                   positionInNode++;
-                  assert(keyBefore+1 == __builtin_bswap32(*reinterpret_cast<const uint32_t*>(leaf->getKey(positionInNode))) ^ (1ul << 31));
                   return true;
                }
                else {

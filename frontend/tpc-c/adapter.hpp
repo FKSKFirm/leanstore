@@ -9,14 +9,12 @@
 #include <map>
 #include <string>
 
+//TODO: change adapter for one big LSM tree (foldRecord analog to RocksDB)
+
 using namespace leanstore;
-// TODO why and what is the template class Record?
 template <class Record>
 struct LeanStoreAdapter {
-   // TODO maybe change keyValueDataStore to storageEngine
    storage::KeyValueInterface* keyValueDataStore;
-   //TODO maybe add direct "storage::lsmtree::LSMTree* lsmTree;" for LSM Tree instead of new Interface
-   // or change to storage::StorageEngineInterface
    std::map<std::string, Record> map;
    string name;
    LeanStoreAdapter()
@@ -25,14 +23,12 @@ struct LeanStoreAdapter {
    }
    LeanStoreAdapter(LeanStore& db, string name) : name(name)
    {
-      //TODO: Register here the LSM-Tree or own BTree
       if (FLAGS_vw) {
          //removed
       } else if (FLAGS_vi) {
          //removed
       } else if (FLAGS_lsm) {
          keyValueDataStore = &db.registerLsmTree(name);
-         //keyValueDataStore = &db.registerLSMTree(name);
       } else {
          keyValueDataStore = &db.registerBTreeLL(name);
       }
@@ -43,10 +39,8 @@ struct LeanStoreAdapter {
    template <class Fn>
    void scanDesc(const typename Record::Key& key, const Fn& fn)
    {
-      // TODO what does the Record respective fold?
       u8 folded_key[Record::maxFoldLength()];
       u16 folded_key_len = Record::foldRecord(folded_key, key);
-      // TODO maybe change keyValueDataStore to storageEngine
       keyValueDataStore->scanDesc(
           folded_key, folded_key_len,
           [&](const u8* key, [[maybe_unused]] u16 key_length, const u8* payload, [[maybe_unused]] u16 payload_length) {

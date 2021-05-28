@@ -60,7 +60,7 @@ int main(int argc, char** argv)
    LeanStore db;
    auto& crm = db.getCRManager();
 
-   /* ********************* Own Test begin ****************/
+   /* ********************* Own Test begin ****************
    test = LeanStoreAdapter<test_t>(db, "own_test");
 
    uint64_t zaehler = ITEMS_NO; //100k
@@ -73,19 +73,19 @@ int main(int argc, char** argv)
             i_data = i_data || Varchar<10>("ORIGINAL");
             //cout << "Test Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
          }
-         test.insert({i}, {i_data});*/
+         test.insert({i}, {i_data});*//*
          test.insert({i}, {"safdkjsadklfjsdalfjksdajfklsafjklsdafjsdaljfkjsdkfjlsdkfjsdaklfajfkssdaklghjkfhguhi4hjwjkh"});
          //cout << "Insert done" << endl;
 
          //Test after merge with PAGE_SIZE=512 if all objects are there (innerNode maxCount=17 / 18 children; leafNode maxCount=3)
-         /*if ((i+1)% 30 == 0) {
-            for(int j=0; j<i;j++) {
-               test_tx(j);
-            }
-         }*/
+         if ((i+1)% 30 == 0) {
+            //for(int j=0; j<i;j++) {
+               test_tx(i+1);
+            //}
+         }
 
          //cout << "Test Select: " << endl;
-         test_tx(i);
+         //test_tx(i);
          //cout << "Test Select Done." << endl;
       }
       cout << "Test Insert until ID: " << zaehler * (count+1) << endl;
@@ -119,6 +119,8 @@ int main(int argc, char** argv)
 
 
    /* ********************* Own Test end ******************/
+
+   // TODO: For one big LSM Tree change registration of adapters (register in same DB)
 
    // -------------------------------------------------------------------------------------
    warehouseCount = FLAGS_tpcc_warehouse_count;

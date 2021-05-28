@@ -121,7 +121,6 @@ class HybridPageGuard
    void reclaim()
    {
       BMC::global_bf->reclaimPage(*(bufferFrame));
-      //cout << "Reclaimed page: " << bufferFrame << endl;
       guard.state = GUARD_STATE::MOVED;
    }
    // -------------------------------------------------------------------------------------
