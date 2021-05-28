@@ -561,7 +561,7 @@ class TPCCWorkload
         w_ytd = rec.w_ytd;
       });
       warehouse.update1(
-          {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; }, WALUpdate1(warehouse_t, w_ytd));
+          {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; });
       Varchar<10> d_name;
       Varchar<20> d_street_1;
       Varchar<20> d_street_2;
@@ -579,7 +579,7 @@ class TPCCWorkload
         d_ytd = rec.d_ytd;
       });
       district.update1(
-          {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; }, WALUpdate1(district_t, d_ytd));
+          {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; });
 
       Varchar<500> c_data;
       Varchar<2> c_credit;
@@ -611,8 +611,7 @@ class TPCCWorkload
                rec.c_balance = c_new_balance;
                rec.c_ytd_payment = c_new_ytd_payment;
                rec.c_payment_cnt = c_new_payment_cnt;
-             },
-             WALUpdate4(customer_t, c_data, c_balance, c_ytd_payment, c_payment_cnt));
+             });
       } else {
          customer.update1(
              {c_w_id, c_d_id, c_id},
@@ -620,8 +619,7 @@ class TPCCWorkload
                rec.c_balance = c_new_balance;
                rec.c_ytd_payment = c_new_ytd_payment;
                rec.c_payment_cnt = c_new_payment_cnt;
-             },
-             WALUpdate3(customer_t, c_balance, c_ytd_payment, c_payment_cnt));
+             });
       }
 
       Varchar<24> h_new_data = Varchar<24>(w_name) || Varchar<24>("    ") || d_name;
@@ -657,7 +655,7 @@ class TPCCWorkload
       });
 
       warehouse.update1(
-          {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; }, WALUpdate1(warehouse_t, w_ytd));
+          {w_id}, [&](warehouse_t& rec) { rec.w_ytd += h_amount; });
       Varchar<10> d_name;
       Varchar<20> d_street_1;
       Varchar<20> d_street_2;
@@ -727,8 +725,7 @@ class TPCCWorkload
                rec.c_balance = c_new_balance;
                rec.c_ytd_payment = c_new_ytd_payment;
                rec.c_payment_cnt = c_new_payment_cnt;
-             },
-             WALUpdate4(customer_t, c_data, c_balance, c_ytd_payment, c_payment_cnt));
+             });
       } else {
          customer.update1(
              {c_w_id, c_d_id, c_id},
@@ -736,8 +733,7 @@ class TPCCWorkload
                rec.c_balance = c_new_balance;
                rec.c_ytd_payment = c_new_ytd_payment;
                rec.c_payment_cnt = c_new_payment_cnt;
-             },
-             WALUpdate3(customer_t, c_balance, c_ytd_payment, c_payment_cnt));
+             });
       }
 
       Varchar<24> h_new_data = Varchar<24>(w_name) || Varchar<24>("    ") || d_name;

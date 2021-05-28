@@ -49,6 +49,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 include("${CMAKE_SOURCE_DIR}/libs/gflags.cmake")
 include("${CMAKE_SOURCE_DIR}/libs/tabulate.cmake")
+#include("${CMAKE_SOURCE_DIR}/libs/rocksdb.cmake")
 #include("${CMAKE_SOURCE_DIR}/libs/googletest.cmake")
 #include("${CMAKE_SOURCE_DIR}/libs/benchmark.cmake")
 #include("${CMAKE_SOURCE_DIR}/libs/rapidjson.cmake")
