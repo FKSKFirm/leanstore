@@ -30,8 +30,8 @@ struct StaticBTree {
 struct LSM : public KeyValueInterface {
    uint64_t baseLimit = (1024 * 1024 * 8) / btree::btreePageSize;
    //uint64_t baseLimit = (1024 * 8) / btree::btreePageSize;
-   //uint64_t factor = 10;
-   uint64_t factor = 2;
+   uint64_t factor = 10;
+   //uint64_t factor = 2;
 
    // pointer to inMemory BTree (Root of LSM-Tree)
    std::unique_ptr<btree::BTreeLL> inMemBTree;
@@ -79,6 +79,7 @@ struct LSM : public KeyValueInterface {
    static DataTypeRegistry::DTMeta getMeta();
    static void iterateChildrenSwips(void* btree_object, BufferFrame& bufferFrame, std::function<bool(Swip<BufferFrame>&)> callback);
    static bool checkSpaceUtilization(void* btree_object, BufferFrame&, OptimisticGuard&, ParentSwipHandler&);
+   OP_RESULT insertWithDeletionMarkerUpdateMarker(u8* key, u16 keyLength, u8* payload, u16 payloadLength, bool deletionMarker, bool updateMarker);
 };
 }
 }

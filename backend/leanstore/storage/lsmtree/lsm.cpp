@@ -254,9 +254,9 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
                // create BloomFilter
-               /*levelToReplace->filter.init(entryCount);
-               for (auto h : hashes)
-                  levelToReplace->filter.insert(h);*/
+               levelToReplace->filter.init(entryCount);
+               for (auto h : hashes.obj)
+                  levelToReplace->filter.insert(h);
 
                // merge done
                // lock root of new Tree and delete upper ptr reference to this node
@@ -569,7 +569,7 @@ OP_RESULT LSM::updateSameSize(u8* key, u16 keyLength, function<void(u8* payload,
          callback(keyPayload, keyPayloadLength);
 
          //third: insert the updated values in the LSMTree (respectively InMemBTree)
-         return LSM::insert(key, keyLength, keyPayload, keyPayloadLength);
+         return LSM::insertWithDeletionMarkerUpdateMarker(key, keyLength, keyPayload, keyPayloadLength, false, true);
       }
    }
 }
@@ -909,9 +909,13 @@ OP_RESULT LSM::insert(u8* key, u16 keyLength, u8* payload, u16 payloadLength)
 {
    return insertWithDeletionMarker(key, keyLength, payload, payloadLength, false);
 }
-
 // inserts a value in the In-memory Level Tree of the LSM tree and merges with lower levels if necessary
 OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16 payloadLength, bool deletionMarker)
+{
+   return insertWithDeletionMarkerUpdateMarker(key, keyLength, payload, payloadLength, deletionMarker, false);
+}
+// inserts a value in the In-memory Level Tree of the LSM tree and merges with lower levels if necessary
+OP_RESULT LSM::insertWithDeletionMarkerUpdateMarker(u8* key, u16 keyLength, u8* payload, u16 payloadLength, bool deletionMarker, bool updateMarker)
 {
    // case1: key does not occur in the hole LSM Tree -> normal insert
    // case2: key occurs in the inMemBtree
@@ -923,7 +927,7 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
    //            -> lower levels with the same key may exist but arent of interest (are deleted during merge)
 
    // if its an insert of an deletionMarker, we know that we can insert in the inMemBTree because we checked it in LSM::remove before
-   if (!deletionMarker) {
+   if (!deletionMarker && !updateMarker) {
       // first lookup inMemTree
       OP_RESULT lookupResult = inMemBTree->lookup(key, keyLength, [&](const u8*, u16) {});
       if (lookupResult == OP_RESULT::OK) {
@@ -938,7 +942,12 @@ OP_RESULT LSM::insertWithDeletionMarker(u8* key, u16 keyLength, u8* payload, u16
          // optional: parallel lookup with queue
          for (unsigned i = 0; i < tiers.size(); i++) {
             // TODO enable filter lookup again
-            // if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
+            if (!tiers[i]->filter.lookup(key, keyLength)) {
+               // value does not occur in tiers[i]
+               continue;
+            }
+            // value may occur in tiers[i] (may be a deleted entry, an updated entry or the original entry or a false positive in the Bloom Filter)
+
             lookupResult = tiers[i]->tree.lookup(key, keyLength, [&](const u8*, u16) {});
             if (lookupResult == OP_RESULT::OK) {
                // case3.1
@@ -1008,6 +1017,12 @@ OP_RESULT LSM::lookup(u8* key, u16 keyLength, function<void(const u8*, u16)> pay
    // optional: parallel lookup with queue
    for (unsigned i = 0; i < tiers.size(); i++) {
       // TODO enable filter lookup again
+      if (!tiers[i]->filter.lookup(key, keyLength)) {
+         // value does not occur in tiers[i]
+         continue;
+      }
+      // value may occur in tiers[i] (may be a deleted entry, an updated entry or the original entry or a false positive in the Bloom Filter)
+
       //if (tiers[i]->filter.lookup(key, keyLength) && tiers[i]->tree.lookup(key, keyLength,payload_callback) == OP_RESULT::OK)
       lookupResult = tiers[i]->tree.lookup(key, keyLength,payload_callback);
       if (lookupResult == OP_RESULT::OK)
@@ -1070,6 +1085,8 @@ struct ParentSwipHandler LSM::findParent(void* lsm_object, BufferFrame& to_find)
          btree::BTreeLL* btreeLevel = &(tree->tiers[toFindLevel]->tree);
          return btree::BTreeGeneric::findParent(*static_cast<btree::BTreeGeneric*>(reinterpret_cast<btree::BTreeLL*>(btreeLevel)), to_find);
       } else {  // BloomFilter
+         //it might be a freed page as well (during merge); TODO: maybe increment version before reclaim in merge, because recheck in PageProviderThread.cpp:104 does not check if the page is FREE
+         jumpmu::jump();
          BloomFilter* bf = &(tree->tiers[toFindLevel]->filter);
          // TODO implement BloomFilter correct (findParent, etc)
          // return BloomFilter.findParent(*static_cast<BloomFilter*>(reinterpret_cast<BloomFilter*>(bf)), to_find);

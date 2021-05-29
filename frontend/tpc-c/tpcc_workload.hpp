@@ -863,12 +863,12 @@ int test_tx(Integer w_id)
    Varchar<test_t_size> textFromRecord;
 
 
-   if (urand(1, 100) <= 0) {
+   if (urand(1, 100) <= 50) {
       test.lookup1({w_id}, [&](const test_t& rec) {
         idFromRecord = rec.id;
         textFromRecord = rec.t_text;
       });
-   } else if (urand(1, 100) <= 0) {
+   } else if (urand(1, 100) <= 50) {
       vector<Integer> ids;
       test.scan({0}, [&](const test_t::Key& key, const test_t& rec) {
         ids.push_back(key.w_id);
@@ -886,4 +886,62 @@ int test_tx(Integer w_id)
        assert(c_count == w_id);
    }
    return 0;
+}
+
+int test_remove(Integer w_id)
+{
+   auto ret = test.erase({w_id});
+   assert(ret);
+   return 0;
+}
+int test_update(Integer w_id)
+{
+   Varchar<test_t_size> textFromRecord;
+
+   test.update1(
+       {w_id},
+       [&](test_t& rec) {
+         w_id = rec.id;
+         rec.t_text = "This is SPARTA! This is SPARTA! This is SPARTA! This is SPARTA! This is SPARTA! - 10 hours";
+       });
+   return 0;
+}
+int test_lookup(Integer w_id)
+{
+   Integer idFromRecord = 0;
+   Varchar<test_t_size> textFromRecord;
+
+   if (w_id%50 == 0 && w_id%200 != 0)
+      return 0;
+
+   test.lookup1({w_id}, [&](const test_t& rec) {
+     idFromRecord = rec.id;
+     textFromRecord = rec.t_text;
+   });
+   assert(idFromRecord == 99);
+   if (w_id%200 == 0)
+      assert(strncmp(textFromRecord.data, "This is a insert after a false delete", textFromRecord.length) == 0);
+   else if (w_id%20 == 0)
+      assert(strncmp(textFromRecord.data, "This is SPARTA! This is SPARTA! This is SPARTA! This is SPARTA! This is SPARTA! - 10 hours", textFromRecord.length) == 0);
+   return 0;
+}
+int test_scanAsc(Integer w_id)
+{
+   vector<Integer> ids;
+   test.scan({w_id}, [&](const test_t::Key& key, const test_t& rec) {
+     ids.push_back(key.w_id);
+     return true;
+   });
+   unsigned c_count = ids.size();
+   assert(c_count == w_id);
+}
+int test_scanDesc(Integer w_id)
+{
+   vector<Integer> ids;
+   test.scanDesc({w_id}, [&](const test_t::Key& key, const test_t& rec) {
+     ids.push_back(key.w_id);
+     return true;
+   });
+   unsigned c_count = ids.size();
+   assert(c_count == w_id);
 }

@@ -23,7 +23,7 @@ void BloomFilter::generateNewBloomFilterLevel(BloomFilter::Page* page, uint64_t 
       return;
    } else {
       // pointers to the child pages doesnt fit in one root page, need of minimum one additional level
-      uint64_t pageCountOnNextLevel = ceil(pagesToInsert / sizeOfFittingPtr);
+      uint64_t pageCountOnNextLevel = ceil(pagesToInsert / (double)sizeOfFittingPtr);
       if (pageCountOnNextLevel > 1) {
          // further level required
          for (int i = 0; i < sizeOfFittingPtr; i++) {
@@ -53,7 +53,7 @@ void BloomFilter::init(uint64_t n)
    pagesBits = 1 + (intlog2(sizeBytes / btree::btreePageSize));
    pageCount = 1ull << pagesBits;
 
-   std::cout << "New BloomFilter with #pages: " << pageCount << std::endl;
+   //std::cout << "New BloomFilter with #pages: " << pageCount << std::endl;
    rootBloomFilterPage = new Page();
 
    // pageCount= 1, 2, 4, 8, 16, 32, ...
@@ -98,6 +98,8 @@ void BloomFilter::insert(uint64_t h)
 
       pageNumber -= positionOfNextChildNode * numberOfEntriesBelowNodePerChild;
       currentPageLevel--;
+      assert(positionOfNextChildNode >= 0);
+      assert(positionOfNextChildNode < (btree::btreePageSize / sizeof(Page*)));
       currentPage = currentPage->pointerToChilds[positionOfNextChildNode];
    }
 

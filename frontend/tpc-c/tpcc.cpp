@@ -64,53 +64,41 @@ int main(int argc, char** argv)
    test = LeanStoreAdapter<test_t>(db, "own_test");
 
    uint64_t zaehler = ITEMS_NO; //100k
-   for (uint64_t count = 0; count < 100000000000; count++) {
+   for (uint64_t count = 0; count < 10000; count++) {
       // Load data
       for (Integer i = zaehler * count; i < zaehler * (count+1); i++) {
-         /*Varchar<test_t_size> i_data = randomastring<test_t_size>(25, test_t_size);
-         if (rnd(10) == 0) {
-            i_data.length = rnd(i_data.length - 8);
-            i_data = i_data || Varchar<10>("ORIGINAL");
-            //cout << "Test Insert ID: " << i << " Daten: "<< i_data.data << " " << endl;
-         }
-         test.insert({i}, {i_data});*//*
          test.insert({i}, {"safdkjsadklfjsdalfjksdajfklsafjklsdafjsdaljfkjsdkfjlsdkfjsdaklfajfkssdaklghjkfhguhi4hjwjkh"});
-         //cout << "Insert done" << endl;
 
-         //Test after merge with PAGE_SIZE=512 if all objects are there (innerNode maxCount=17 / 18 children; leafNode maxCount=3)
-         if ((i+1)% 30 == 0) {
-            //for(int j=0; j<i;j++) {
-               test_tx(i+1);
-            //}
+         if (i%50 == 0) { //0,50,100,150,...
+            test_remove(i);
+         } else if (i% 20 == 0) {//20,40,60,80,120...
+            test_update(i);
          }
 
-         //cout << "Test Select: " << endl;
-         //test_tx(i);
-         //cout << "Test Select Done." << endl;
+         if (i%200 == 0) {//0,200,400,600,...
+            test.insert({i}, {"This is a insert after a false delete"});
+         }
+
+         test_lookup(i);
+         if (i>0)
+            test_lookup(i-1);
       }
+      test_lookup((zaehler * (count+1))-1);
+
       cout << "Test Insert until ID: " << zaehler * (count+1) << endl;
       // -------------------------------------------------------------------------------------
       double gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
       cout << "data loaded - consumed space in GiB = " << gib << endl;
       cout << "Test pages = " << test.keyValueDataStore->countPages() << endl;
+
       // -------------------------------------------------------------------------------------
       // read data
       // -------------------------------------------------------------------------------------
-
       for (Integer i = zaehler * count; i < zaehler * (count+1); i++) {
-         volatile u64 tx_acc = 0;
-         jumpmuTry()
-         {
-            u32 test_id = urand(1, zaehler-1);
-            test_tx(i);
-            if (FLAGS_tpcc_abort_pct && urand(0, 100) <= FLAGS_tpcc_abort_pct) {
-            } else {
-            }
-            WorkerCounters::myCounters().tx++;
-            tx_acc++;
-         }
-         jumpmuCatch() { WorkerCounters::myCounters().tx_abort++; }
+         if(i%50 != 0 || i%200 == 0)
+            test_lookup(i);
       }
+
       // -------------------------------------------------------------------------------------
       gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
       cout << endl << "consumed space in GiB = " << gib << endl;
