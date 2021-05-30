@@ -130,6 +130,10 @@ void BTreeNode::compactify()
    static_cast<void>(should);
    BTreeNode tmp(is_leaf);
    tmp.setFences(getLowerFenceKey(), lower_fence.length, getUpperFenceKey(), upper_fence.length);
+
+   tmp.type = this->type;
+   tmp.level = this->level;
+
    copyKeyValueRange(&tmp, 0, 0, count);
    tmp.upper = upper;
    memcpy(reinterpret_cast<char*>(this), &tmp, sizeof(BTreeNode));
@@ -300,7 +304,7 @@ void BTreeNode::copyKeyValue(u16 srcSlot, BTreeNode* dst, u16 dstSlot)
    u16 fullLength = getFullKeyLen(srcSlot);
    u8 key[fullLength];
    copyFullKey(srcSlot, key);
-   dst->storeKeyValue(dstSlot, key, fullLength, getPayload(srcSlot), getPayloadLength(srcSlot));
+   dst->storeKeyValueWithDeletionMarker(dstSlot, key, fullLength, getPayload(srcSlot), getPayloadLength(srcSlot), isDeleted(srcSlot));
 }
 // -------------------------------------------------------------------------------------
 void BTreeNode::insertFence(BTreeNodeHeader::FenceKey& fk, u8* key, u16 keyLength)
@@ -351,13 +355,18 @@ BTreeNode::SeparatorInfo BTreeNode::findSep()
    // does not work under optimistic mode assert(upper < count);
    u16 maxPos = count / 2;
    s16 maxPrefix = commonPrefix(maxPos, 0);
+   //TODO: ask, if it makes sense to go to upper
    for (u32 i = lower; i < upper; i++) {
       s32 prefix = commonPrefix(i, 0);
+      //TODO: ask, because prefix of i>maxPos is never > than maxPrefix, only maybe the same?
       if (prefix > maxPrefix) {
          maxPrefix = prefix;
          maxPos = i;
       }
    }
+   // e.g. prefix=ABC key[0]=(ABC)000 000 & key[maxPos]=(ABC)000 999 and key[maxPos+1]=(ABC)002 000  =>  common here=2 (trunc=true)
+   // TODO: is this not broken? insert value (ABC)001 000 ?
+   // or e.g. prefix=ABC key[0]=(ABC)000 & key[maxPos]=(ABC)001 and key[maxPos+1]=(ABC)002  =>  common here=2
    unsigned common = commonPrefix(maxPos, maxPos + 1);
    if ((slot[maxPos].key_len > common) && (slot[maxPos + 1].key_len > common + 1)) {
       return SeparatorInfo{static_cast<u16>(prefix_length + common + 1), maxPos, true};
