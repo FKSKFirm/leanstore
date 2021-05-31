@@ -64,7 +64,7 @@ int main(int argc, char** argv)
    test = LeanStoreAdapter<test_t>(db, "own_test");
 
    uint64_t zaehler = ITEMS_NO; //100k
-   for (uint64_t count = 0; count < 10000; count++) {
+   for (uint64_t count = 0; count < 1000; count++) {
       // Load data
       for (Integer i = zaehler * count; i < zaehler * (count+1); i++) {
          test.insert({i}, {"safdkjsadklfjsdalfjksdajfklsafjklsdafjsdaljfkjsdkfjlsdkfjsdaklfajfkssdaklghjkfhguhi4hjwjkh"});
@@ -84,6 +84,8 @@ int main(int argc, char** argv)
             test_lookup(i-1);
       }
       test_lookup((zaehler * (count+1))-1);
+      test_scanAsc(0);
+      test_scanDesc(zaehler*(count+1));
 
       cout << "Test Insert until ID: " << zaehler * (count+1) << endl;
       // -------------------------------------------------------------------------------------
@@ -141,17 +143,15 @@ int main(int argc, char** argv)
             while (true) {
                u32 w_id = g_w_id++;
                if (w_id > FLAGS_tpcc_warehouse_count) {
+                  cout << "load data done" << endl;
                   return;
                }
                loadStock(w_id);
-               cout << "loadStock done" << endl;
                loadDistrinct(w_id);
-               cout << "loadDistrict done" << endl;
                for (Integer d_id = 1; d_id <= 10; d_id++) {
                   loadCustomer(w_id, d_id);
                   loadOrders(w_id, d_id);
                }
-               cout << "loadCustomerOrders done" << endl;
             }
          });
       }

@@ -204,6 +204,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
             ParentSwipHandler parent_handler = getDTRegistry().findParent(dt_id, bf);
             assert(parent_handler.parent_guard.state == GUARD_STATE::OPTIMISTIC);
             ExclusiveUpgradeIfNeeded p_x_guard(parent_handler.parent_guard);
+            guard.guard.recheck();
             guard.guard.toExclusive();
             // -------------------------------------------------------------------------------------
             partition.cooling_queue.erase(bf_itr);

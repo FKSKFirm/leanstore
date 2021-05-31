@@ -179,9 +179,9 @@ BufferFrame& BufferManager::allocatePage()
    if (free_pid == dram_pool_size) {
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Going out of memory !" << endl;
-      cout << "Pages allocated: " << pageAllocations << endl;
-      cout << "Pages in use: " << pagesInUse << endl;
-      cout << "Pages freed: " << pageFrees << endl;
+      //cout << "Pages allocated: " << pageAllocations << endl;
+      //cout << "Pages in use: " << pagesInUse << endl;
+      //cout << "Pages freed: " << pageFrees << endl;
       cout << "-------------------------------------------------------------------------------------" << endl;
    }
    free_bf.header.latch.assertExclusivelyLatched();
