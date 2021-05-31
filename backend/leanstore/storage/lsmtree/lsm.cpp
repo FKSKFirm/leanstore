@@ -249,7 +249,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                // all entries processed, create last page and exit
                entryCount += kvEntries->size();
                // TODO: better buildNode with upper replacement (does not split the node which would cause the problem with the node-count=1)
-               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree);
+               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey);
 
                assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
@@ -444,11 +444,13 @@ void LSM::mergeAll()
          if (i + 1 < tiers.size()) {
             // merge with next level
             StaticBTree& next = *tiers[i + 1];
+            cout << "merge level " << i << " with level " << i+1 << endl;
 
             merge_mutex.lock();
             bTreeInMerge = std::move(tiers[i + 1]);
             mergeTrees(tiers[i + 1], &curr.tree, &bTreeInMerge->tree);
             bTreeInMerge.release();
+            cout << "Merge done" << endl;
 
             ensure(tiers[i+1]->tree.type == LSM_TYPE::BTree);
             ensure(tiers[i+1]->filter.type == LSM_TYPE::BloomFilter);
@@ -638,21 +640,45 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
       inMemMoveNext = false;
       auto ret = inMemBTreeIterator.seek(searchKey);
       if (ret != OP_RESULT::OK) {
-         // no suitable value found in the inMemBTree
+         // no suitable start value found in the inMemBTree
          inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""),0);
       } else {
          inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+         // maybe the first value found is deleted, search further
+         while (inMemBTreeIterator.leaf->isDeleted(inMemBTreeIterator.cur)) {
+            auto ret = inMemBTreeIterator.next();
+            if (ret != OP_RESULT::OK) {
+               // no suitable start value found in the inMemBTree, move on to the tiers
+               inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""),0);
+               break;
+            }
+            else {
+               inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+            }
+         }
       }
+
 
       for (int i = 0; i < tiers.size(); i++) {
          // check levels
          tiersMoveNext[i] = false;
          auto ret = tierIterators[i].seek(searchKey);
          if (ret != OP_RESULT::OK) {
-            // no suitable value found in this level
+            // no suitable start value found in this level
             tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
          } else {
             tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+            // maybe the first value which was found is deleted, search further
+            while (tierIterators[i].leaf->isDeleted(tierIterators[i].cur)) {
+               auto ret = tierIterators[i].next();
+               if (ret != OP_RESULT::OK) {
+                  // no suitable start value found in this tier, move on to next tier
+                  tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
+                  break;
+               } else {
+                  tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+               }
+            }
          }
       }
 
@@ -667,6 +693,18 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
                inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""), 0);
             } else {
                inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+               // maybe this value is deleted, search further
+               while (inMemBTreeIterator.leaf->isDeleted(inMemBTreeIterator.cur)) {
+                  auto ret = inMemBTreeIterator.next();
+                  if (ret != OP_RESULT::OK) {
+                     // no next suitable value found in the inMemBTree
+                     inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""),0);
+                     break;
+                  }
+                  else {
+                     inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+                  }
+               }
             }
          }
 
@@ -680,6 +718,17 @@ OP_RESULT LSM::scanAsc(u8* start_key, u16 key_length, function<bool(const u8* ke
                   tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
                } else {
                   tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+                  // maybe the next value in this tier is deleted, search further
+                  while (tierIterators[i].leaf->isDeleted(tierIterators[i].cur)) {
+                     auto ret = tierIterators[i].next();
+                     if (ret != OP_RESULT::OK) {
+                        // no suitable start value found in this tier, move on to next tier
+                        tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
+                        break;
+                     } else {
+                        tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+                     }
+                  }
                }
             }
          }
@@ -772,6 +821,18 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
          inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""), 0);
       } else {
          inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+         // maybe the first value found is deleted, search further
+         while (inMemBTreeIterator.leaf->isDeleted(inMemBTreeIterator.cur)) {
+            auto ret = inMemBTreeIterator.prev();
+            if (ret != OP_RESULT::OK) {
+               // no suitable start value found in the inMemBTree, move on to the tiers
+               inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""),0);
+               break;
+            }
+            else {
+               inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+            }
+         }
       }
 
       for (int i = 0; i < tiers.size(); i++) {
@@ -783,6 +844,17 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
             tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
          } else {
             tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+            // maybe the first value which was found is deleted, search further
+            while (tierIterators[i].leaf->isDeleted(tierIterators[i].cur)) {
+               auto ret = tierIterators[i].prev();
+               if (ret != OP_RESULT::OK) {
+                  // no suitable start value found in this tier, move on to next tier
+                  tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
+                  break;
+               } else {
+                  tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+               }
+            }
          }
       }
 
@@ -797,6 +869,18 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
                inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""), 0);
             } else {
                inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+               // maybe this value is deleted, search further
+               while (inMemBTreeIterator.leaf->isDeleted(inMemBTreeIterator.cur)) {
+                  auto ret = inMemBTreeIterator.prev();
+                  if (ret != OP_RESULT::OK) {
+                     // no next suitable value found in the inMemBTree
+                     inMemSlice = Slice(reinterpret_cast<const unsigned char*>(""),0);
+                     break;
+                  }
+                  else {
+                     inMemSlice = Slice(inMemBTreeIterator.key().data(), inMemBTreeIterator.key().size());
+                  }
+               }
             }
          }
 
@@ -810,6 +894,17 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
                   tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
                } else {
                   tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+                  // maybe the next value in this tier is deleted, search further
+                  while (tierIterators[i].leaf->isDeleted(tierIterators[i].cur)) {
+                     auto ret = tierIterators[i].prev();
+                     if (ret != OP_RESULT::OK) {
+                        // no suitable start value found in this tier, move on to next tier
+                        tierSlices[i] = Slice(reinterpret_cast<const unsigned char*>(""), 0);
+                        break;
+                     } else {
+                        tierSlices[i] = Slice(tierIterators[i].key().data(), tierIterators[i].key().size());
+                     }
+                  }
                }
             }
          }
@@ -838,7 +933,7 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
                // no value found in the levels before
                nextValue = tierSlices[i];
                highestValue = i;
-            } else if (cmpKeysString(tierSlices[i].data(), nextValue.data(), tierSlices[i].size(), nextValue.size()) > 0) {//std::memcmp(tierSlices[i].data(), nextValue.data(),min(tierSlices[i].size(), nextValue.size()))) {
+            } else if (cmpKeysString(tierSlices[i].data(), nextValue.data(), tierSlices[i].size(), nextValue.size()) > 0) {
                // larger key found
                nextValue = tierSlices[i];
                highestValue = i;
