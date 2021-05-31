@@ -59,7 +59,7 @@ unsigned commonPrefix(uint8_t* a, unsigned lenA, uint8_t* b, unsigned lenB)
    return i;
 }
 
-void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyStorage, JMUW<vector<uint8_t>>& payloadStorage, btree::BTreeLL& btree)
+void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyStorage, JMUW<vector<uint8_t>>& payloadStorage, btree::BTreeLL& btree, bool isFirstNode, tuple<u8*,u16> lowerFenceKey, bool isLastNode)
 {
    //added while true with jumpmuTry since new Page allocation failed (dram_free_list empty, partition.dram_free_list.pop() fails)
    while (true) {
@@ -76,14 +76,29 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
          //prefix in this node (key with "http://..." to "https://..." would have the prefix "http" with length 4
          new_node->prefix_length = commonPrefix(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen,
                                            entries->front().keyOffset + keyStorage->data(), entries->front().keyLen);
-         for (unsigned i = 0; i < entries->size(); i++)
-            new_node->storeKeyValueWithDeletionMarker(i,
+         if (isFirstNode) {
+            // first node must have a prefix length of 0, because the lower bound is zero (and the prefix is stored in the lower bound)
+            new_node->prefix_length = 0;
+         }
+         for (unsigned i = 1; i < entries->size(); i++)
+            new_node->storeKeyValueWithDeletionMarker(i-1,
+         //for (unsigned i = 0; i < entries->size(); i++)
+            //new_node->storeKeyValueWithDeletionMarker(i,
                                entries.obj[i].keyOffset + keyStorage->data(), entries.obj[i].keyLen,
                                entries.obj[i].payloadOffset + payloadStorage->data(), entries.obj[i].payloadLen,
                                entries.obj[i].deletionFlag);
-         new_node->count = entries->size();
-         new_node->insertFence(new_node->lower_fence, entries->back().keyOffset + keyStorage->data(),
-                               new_node->prefix_length);  // XXX: could put prefix before last key and set upperfence
+         new_node->count = entries->size()-1;
+         if (isFirstNode) {
+            // set lower Fence = 0, maybe unnecessary, because of default
+            u8 lowerFence = 0;
+            new_node->insertFence(new_node->lower_fence, &lowerFence, 0);
+         }
+         else {
+            new_node->insertFence(new_node->lower_fence, entries->front().keyOffset + keyStorage->data(),
+                                  entries->front().keyLen);
+            //new_node->insertFence(new_node->lower_fence, entries->front().keyOffset + keyStorage->data(),
+            //                      entries->front().keyLen);  // XXX: could put prefix before last key and set upperfence
+         }
          new_node->insertFence(new_node->upper_fence, entries->back().keyOffset + keyStorage->data(),
                                entries->back().keyLen);
          new_node->makeHint();
@@ -92,7 +107,8 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
             jumpmuTry()
             {
                FLAGS_bulk_insert = true;
-               btree.insertLeafNodeNew(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node);
+               btree.insertLeafNode(entries->back().keyOffset + keyStorage->data(), entries->back().keyLen, new_node, isLastNode);
+               //btree.insertLeafNodeNew(new_node->getUpperFenceKey(), new_node->upper_fence.length, new_node);
                FLAGS_bulk_insert = false;
                jumpmu_break;
             }
@@ -214,7 +230,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
 
       uint64_t entryCount = 0;
 
-      unsigned totalKeySize = 0;
+      unsigned totalKeySize = 1;
       unsigned totalPayloadSize = 0;
       // saves the keyOffset and the length of the key and the payloadOffset and the length of the payload
       JMUW<vector<KeyValueEntry>> kvEntries;
@@ -243,13 +259,19 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
 
       JMUW<vector<uint64_t>> hashes;
 
+      //TODO: set the upperFence=0 in the highest node as well (pay attention with the prefix/space calculation if prefix length=0; but prefix_length>0 should work also (lower fence is set))
+      bool lowestNode = true;
+      tuple<u8*,u16> lowerFenceKey = make_tuple(nullptr,0);
+
+      kvEntries->push_back({0, 1, 0, 0, false});
+      keyStorage->insert(keyStorage->end(), 0);
+
       while (true) {
          if (aTreeLSMIterator.done) {
             if (bTreeLSMIterator.done) {
                // all entries processed, create last page and exit
                entryCount += kvEntries->size();
-               // TODO: better buildNode with upper replacement (does not split the node which would cause the problem with the node-count=1)
-               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey);
+               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey, true);
 
                assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
@@ -259,43 +281,9 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                   levelToReplace->filter.insert(h);
 
                // merge done
-               // lock root of new Tree and delete upper ptr reference to this node
-               // get the highest child in the root of the new Tree and set this as upper ptr, decrement count (check for a count == 1, then the root is not necessary)
-               // new Tree is now ready
-               // reclaim
-               // We need to set the highest upper ptr correct (pointed to imMemBtree-Root if bTree was NULL or to the old tier root)
-               // the old tree of tier[i] is set as the highest upper ptr in the new tree at tier[i]
-               // therefore we must remove this old root like the dummy node and set the pointers in its parent node in the new tree correct
 
                jumpmuTry()
                {
-                  HybridPageGuard<btree::BTreeNode> upperNode = HybridPageGuard<btree::BTreeNode>(levelToReplace->tree.meta_node_bf);
-                  HybridPageGuard<btree::BTreeNode> currentNode(upperNode, upperNode->upper);
-                  assert(rootMerker->header.keep_in_memory);
-                  if (bTree != NULL) {
-                     assert(rootMerker == ((btree::BTreeNode*)bTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
-                  } else {
-                     assert(rootMerker == ((btree::BTreeNode*)aTreeLSMIterator.btree.meta_node_bf->page.dt)->upper.bf);
-                  }
-                  while (currentNode.bufferFrame != rootMerker) {
-                     upperNode = std::move(currentNode);
-                     Swip<btree::BTreeNode>* childToFollow = &upperNode->upper;
-                     currentNode = HybridPageGuard(upperNode, *childToFollow);
-                  }
-                  assert(currentNode.bufferFrame->header.keep_in_memory);
-                  if (upperNode->count <= 1) {
-                     // TODO: Problem when we remove slot 0 -> count=0 and only upper ptr is set
-                     // We need to reclaim the currentNode and set the left child (slot0) as new root
-                     cout << "Count Root" << upperNode->count << endl;
-                  }
-                  assert(upperNode.bufferFrame != levelToReplace->tree.meta_node_bf);
-                  upperNode.toExclusive();
-                  upperNode->upper = upperNode->getChild(upperNode->count - 1);
-
-                  assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
-
-                  upperNode->removeSlot(upperNode->count - 1);
-
                   // Reclaim the remaining meta & root nodes
                   HybridPageGuard<btree::BTreeNode> aTreeMetaNode = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
                   HybridPageGuard<btree::BTreeNode> aTreeRootNode(aTreeMetaNode, aTreeMetaNode->upper);
@@ -358,17 +346,31 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
          hashes->push_back(BloomFilter::hashKey(key, keyLen));
 
          unsigned prefix = commonPrefix(kvEntries->front().keyOffset + keyStorage->data(), kvEntries->front().keyLen, key, keyLen);
+         if (lowestNode) {
+            prefix = 0;
+         }
          // added one additional keyLen because of adding upperFence in buildNode
          if (spaceNeeded(prefix, totalKeySize + keyLen + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
             // key does not fit, create new page
             kvEntries->pop_back();
             entryCount += kvEntries->size();
-            buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree);  // could pick shorter separator here
+            buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey, false);  // could pick shorter separator here
+            lowerFenceKey = make_tuple((kvEntries->back().keyOffset + keyStorage->data()), kvEntries->back().keyLen);
+            lowestNode = false;
+
+            auto lowerFenceMerker = kvEntries->back();
+            auto lowerFenceKey = kvEntries->back().keyOffset + keyStorage->data();
+
             kvEntries->clear();
             keyStorage->clear();
             payloadStorage->clear();
             totalKeySize = 0;
             totalPayloadSize = 0;
+
+            kvEntries->push_back({0, lowerFenceMerker.keyLen, 0, 0, false});
+            keyStorage->insert(keyStorage->end(), lowerFenceKey, lowerFenceKey + lowerFenceMerker.keyLen);
+            totalKeySize += lowerFenceMerker.keyLen;
+
          } else {
             // key fits, buffer it
             // go to next entry in the tree

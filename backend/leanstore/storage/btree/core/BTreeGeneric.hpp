@@ -113,7 +113,7 @@ class BTreeGeneric
    u32 bytesFree();
    void printInfos(uint64_t totalSize);
    void create(DTID dtid, BufferFrame* meta_bf, DataStructureIdentifier* dsi);
-   void insertLeafNodeNew(uint8_t* key, unsigned int keyLength, ExclusivePageGuard<BTreeNode>& leaf);
+   void insertLeafNode(uint8_t* key, unsigned int keyLength, ExclusivePageGuard<BTreeNode>& leaf, bool isLastNode);
 };
 // -------------------------------------------------------------------------------------
 }  // namespace btree

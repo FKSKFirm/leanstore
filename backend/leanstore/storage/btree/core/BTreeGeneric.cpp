@@ -616,7 +616,7 @@ void BTreeGeneric::printInfos(uint64_t totalSize)
 }
 // -------------------------------------------------------------------------------------
 
-void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf) {
+void BTreeGeneric::insertLeafNode(uint8_t* key, unsigned keyLength, ExclusivePageGuard<BTreeNode>& leaf, bool isLastNode) {
    while  (true) {
       jumpmuTry() {
          // lock the meta node
@@ -635,6 +635,13 @@ void BTreeGeneric::insertLeafNodeNew(uint8_t* key, unsigned keyLength, Exclusive
          }
 
          parent_guard.unlock();
+
+         if (isLastNode) {
+            ExclusivePageGuard<BTreeNode> exclusiveInnerNodeGuard = ExclusivePageGuard(std::move(current_node));
+            auto swip = leaf.swip();
+            exclusiveInnerNodeGuard->upper = swip;
+            jumpmu_return;
+         }
 
          if (current_node->canInsert(keyLength, sizeof(BTreeNode*))) {
             ExclusivePageGuard<BTreeNode> exclusiveInnerNodeGuard = ExclusivePageGuard(std::move(current_node));
