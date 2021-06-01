@@ -16,12 +16,11 @@ namespace leanstore
          struct LSMBTreeMerger {
 
             btree::BTreeGeneric& btree;
-            btree::BTreeGeneric& newBtree;
             HybridPageGuard<btree::BTreeNode> leaf;
             s32 positionInNode = -1;
             bool done = false;
 
-            LSMBTreeMerger(btree::BTreeGeneric& oldTree, btree::BTreeGeneric& newTree) : btree(oldTree), newBtree(newTree) { }
+            LSMBTreeMerger(btree::BTreeGeneric& oldTree) : btree(oldTree) { }
             ~LSMBTreeMerger() { leaf.unlock(); }
 
             void moveToFirstLeaf() {
@@ -91,6 +90,15 @@ namespace leanstore
                while (true) {
                   jumpmuTry()
                   {
+                     /*const u16 key_length = leaf->upper_fence.length;
+                     u8 key[key_length];
+                     std::memcpy(key, leaf->getUpperFenceKey(), leaf->upper_fence.length);
+
+                     leaf.unlock();
+
+                     btree.findLeafAndLatchParent<LATCH_FALLBACK_MODE::EXCLUSIVE>(leaf, key, key_length);
+                     positionInNode = 0;
+*/
                      auto parent = btree.findParent(btree, *leaf.bufferFrame);
                      HybridPageGuard<btree::BTreeNode> parentNodeGuard = parent.getParentReadPageGuard<btree::BTreeNode>();
                      parentNodeGuard.toExclusive();
