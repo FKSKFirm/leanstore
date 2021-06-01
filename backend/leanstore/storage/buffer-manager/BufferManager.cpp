@@ -200,6 +200,7 @@ void BufferManager::reclaimPage(BufferFrame& bf)
    pageFrees++;
    Partition& partition = getPartition(bf.header.pid);
    partition.freePage(bf.header.pid);
+   bf.header.keep_in_memory = false;
    // -------------------------------------------------------------------------------------
    if (bf.header.isWB) {
       // DO NOTHING ! we have a garbage collector ;-)
