@@ -42,10 +42,10 @@ static int cmpKeysString(Slice a, Slice b, unsigned aLength, unsigned bLength)
    return (aLength - bLength);
 }
 
-unsigned spaceNeeded(unsigned prefix, unsigned totalKeySize, unsigned totalPayloadSize, unsigned count)
+unsigned spaceNeeded(unsigned prefix, unsigned totalKeySize, unsigned totalPayloadSize, unsigned count, unsigned fencesLength)
 {
    // spaceNeeded = BTreeNodeHeader + slots * count + totalKeyAndPayloadSize + lowerFence + upperFence
-   return sizeof(btree::BTreeNodeHeader) + (sizeof(btree::BTreeNode::Slot) * count) + totalKeySize - (count * prefix) + prefix + totalPayloadSize;
+   return sizeof(btree::BTreeNodeHeader) + (sizeof(btree::BTreeNode::Slot) * count) + totalKeySize - (count * prefix) + fencesLength + totalPayloadSize;
 }
 
 // returns the number of same letters
@@ -81,6 +81,7 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
             new_node->prefix_length = 0;
          }
          new_node->count = entries->size()-1;
+         assert(new_node->count>0);
          for (unsigned i = 1; i < entries->size(); i++) {
             //cout << "Key: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(entries.obj[i].keyOffset + keyStorage->data())) ^ (1ul << 31)) << endl;
             //cout << "KeyLen: " << entries.obj[i].keyLen << endl;
@@ -340,38 +341,43 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
             guard.unlock();
 
             newTree->tree.create(this->dt_id, &newMetaNode, &dsi);
+
+            HybridPageGuard<btree::BTreeNode> metaNode = HybridPageGuard<btree::BTreeNode>(newTree->tree.meta_node_bf);
+            HybridPageGuard<btree::BTreeNode> rootNode = HybridPageGuard(metaNode, metaNode->upper);
+            rootNode.toExclusive();
+            rootNode->is_leaf = false;
+
+            if(bTree == nullptr) {
+               // we need a dummy node (upper ptr)
+               HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
+               HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
+               rootPg.toExclusive();
+               rootNode->upper = rootPg.swip();
+               rootPg.bufferFrame->header.keep_in_memory = true;
+               rootPg.unlock();
+               pg.unlock();
+            }
+            else {
+               // bTree is the tree at level i+1, which will be replaced. Set its root as upper "dummy node" of the new root
+               HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(bTree->meta_node_bf);
+               HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
+               rootPg.toExclusive();
+               rootNode->upper = rootPg.swip();
+               // we need to set the old root as keepInMemory, because two swips point to this node (meta_node and now the root of the new tree)
+               rootPg.bufferFrame->header.keep_in_memory = true;
+               rootPg.unlock();
+               pg.unlock();
+            }
+            rootNode.unlock();
+            metaNode.unlock();
             jumpmu_break;
          }
          jumpmuCatch() { }
       }
-
-      btree::BTreeNode* metaNode = (btree::BTreeNode*)newTree->tree.meta_node_bf->page.dt;
-      btree::BTreeNode* rootNode = (btree::BTreeNode*)metaNode->upper.bf->page.dt;
-      rootNode->is_leaf = false;
-
-      if(bTree == nullptr) {
-         // we need a dummy node (upper ptr)
-         HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(aTree->meta_node_bf);
-         HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
-         rootNode->upper = rootPg.swip();
-         rootPg.bufferFrame->header.keep_in_memory = true;
-         rootPg.unlock();
-         pg.unlock();
-      }
-      else {
-         // bTree is the tree at level i+1, which will be replaced. Set its root as upper "dummy node" of the new root
-         HybridPageGuard<btree::BTreeNode> pg = HybridPageGuard<btree::BTreeNode>(bTree->meta_node_bf);
-         HybridPageGuard<btree::BTreeNode> rootPg = HybridPageGuard(pg, pg->upper);
-         rootNode->upper = rootPg.swip();
-         // we need to set the old root as keepInMemory, because two swips point to this node (meta_node and now the root of the new tree)
-         rootPg.bufferFrame->header.keep_in_memory = true;
-         rootPg.unlock();
-         pg.unlock();
-      }
       newTree->tree.pageCount = 2; //root node + upper dummy node (does not contain the pages of the old tree)
       newTree->tree.height = 2; //root node + upper dummy node/old tree root
 
-      merge_mutex.unlock();
+      merge_mutex.lock();
       bTreeInMerge = std::move(levelToReplace);
       levelToReplace = std::move(newTree);
       merge_mutex.unlock();
@@ -420,7 +426,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                entryCount += kvEntries->size();
 
                //check if the remaining values fit in one page without a prefix (totalKeySize includes lowerFence, upperFenceLength is 0)
-               if (spaceNeeded(0, totalKeySize, totalPayloadSize, kvEntries->size()) >= btree::btreePageSize) {
+               if (spaceNeeded(0, totalKeySize, totalPayloadSize, kvEntries->size(), kvEntries->front().keyLen + kvEntries->back().keyLen) >= btree::btreePageSize) {
                   //save one(highest) key for last node and remove it then
                   auto entryForLastNode = kvEntries->back();
                   uint8_t* key = keyStorage->data() + keyStorage->size() - entryForLastNode.keyLen;
@@ -524,8 +530,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
          if (lowestNode) {
             prefix = 0;
          }
-         // adding two times the keyLen, because this key would be the highest key and the upperFence
-         if (spaceNeeded(prefix, totalKeySize + keyLen + keyLen, totalPayloadSize + payloadLen, kvEntries->size()) >= btree::btreePageSize) {
+         if (spaceNeeded(prefix, totalKeySize + keyLen, totalPayloadSize + payloadLen, kvEntries->size(), kvEntries->front().keyLen + keyLen) >= btree::btreePageSize) {
             // key does not fit, create new page
             kvEntries->pop_back();
             entryCount += kvEntries->size();
