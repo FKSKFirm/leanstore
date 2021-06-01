@@ -49,8 +49,11 @@ struct LeanStoreAdapter {
    template <class Fn>
    void scanDesc(const typename Record::Key& key, const Fn& fn)
    {
-      u8 folded_key[Record::maxFoldLength()];
+      u8 folded_key[Record::maxFoldLength() + sizeof(this->id)];
       u16 folded_key_len = Record::foldRecord(folded_key, key);
+      if (FLAGS_allInOneKVStore) {
+         folded_key_len = fold(folded_key, this->id) + Record::foldRecord(folded_key + sizeof(this->id), key);
+      }
       keyValueDataStore->scanDesc(
           folded_key, folded_key_len,
           [&](const u8* key, [[maybe_unused]] u16 key_length, const u8* payload, [[maybe_unused]] u16 payload_length) {
@@ -58,7 +61,12 @@ struct LeanStoreAdapter {
                 return false;
              }
              typename Record::Key typed_key;
-             Record::unfoldRecord(key, typed_key);
+             if (FLAGS_allInOneKVStore) {
+                Record::unfoldRecord(reinterpret_cast<const u8*>(key + sizeof(this->id)), typed_key);
+             }
+             else {
+                Record::unfoldRecord(key, typed_key);
+             }
              const Record& typed_payload = *reinterpret_cast<const Record*>(payload);
              return fn(typed_key, typed_payload);
           });
@@ -140,13 +148,18 @@ struct LeanStoreAdapter {
           folded_key, folded_key_len,
           [&](const u8* key, u16 key_length, const u8* payload, u16 payload_length) {
              if (key_length != folded_key_len) {
-                return false;
-             }
-             static_cast<void>(payload_length);
-             typename Record::Key typed_key;
-             Record::unfoldRecord(key, typed_key);
-             const Record& typed_payload = *reinterpret_cast<const Record*>(payload);
-             return fn(typed_key, typed_payload);
+               return false;
+            }
+            static_cast<void>(payload_length);
+            typename Record::Key typed_key;
+            if (FLAGS_allInOneKVStore) {
+               Record::unfoldRecord(reinterpret_cast<const u8*>(key + sizeof(this->id)), typed_key);
+            }
+            else {
+               Record::unfoldRecord(key, typed_key);
+            }
+            const Record& typed_payload = *reinterpret_cast<const Record*>(payload);
+            return fn(typed_key, typed_payload);
           });
    }
    // -------------------------------------------------------------------------------------
