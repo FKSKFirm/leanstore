@@ -114,17 +114,17 @@ int main(int argc, char** argv)
 
    // -------------------------------------------------------------------------------------
    warehouseCount = FLAGS_tpcc_warehouse_count;
-      warehouse = LeanStoreAdapter<warehouse_t>(db, "warehouse");
-      district = LeanStoreAdapter<district_t>(db, "district");
-      customer = LeanStoreAdapter<customer_t>(db, "customer");
-      customerwdl = LeanStoreAdapter<customer_wdl_t>(db, "customerwdl");
-      history = LeanStoreAdapter<history_t>(db, "history");
-      neworder = LeanStoreAdapter<neworder_t>(db, "neworder");
-      order = LeanStoreAdapter<order_t>(db, "order");
-      order_wdc = LeanStoreAdapter<order_wdc_t>(db, "order_wdc");
-      orderline = LeanStoreAdapter<orderline_t>(db, "orderline");
-      item = LeanStoreAdapter<item_t>(db, "item");
-      stock = LeanStoreAdapter<stock_t>(db, "stock");
+      warehouse = LeanStoreAdapter<warehouse_t>(db, "warehouse",0);
+      district = LeanStoreAdapter<district_t>(db, "district",1);
+      customer = LeanStoreAdapter<customer_t>(db, "customer",2);
+      customerwdl = LeanStoreAdapter<customer_wdl_t>(db, "customerwdl",3);
+      history = LeanStoreAdapter<history_t>(db, "history",4);
+      neworder = LeanStoreAdapter<neworder_t>(db, "neworder",5);
+      order = LeanStoreAdapter<order_t>(db, "order",6);
+      order_wdc = LeanStoreAdapter<order_wdc_t>(db, "order_wdc",7);
+      orderline = LeanStoreAdapter<orderline_t>(db, "orderline",8);
+      item = LeanStoreAdapter<item_t>(db, "item",9);
+      stock = LeanStoreAdapter<stock_t>(db, "stock",10);
    // -------------------------------------------------------------------------------------
    db.registerConfigEntry("tpcc_warehouse_count", FLAGS_tpcc_warehouse_count);
    db.registerConfigEntry("tpcc_warehouse_affinity", FLAGS_tpcc_warehouse_affinity);

@@ -74,3 +74,4 @@ DEFINE_uint64(tmp, 0, "");
 DEFINE_bool(lsm, false, "Enable LSM implementation instead of BTree");
 DEFINE_bool(lsm_bloomFilter, false, "Enable Bloom Filter in LSM");
 DEFINE_uint64(lsm_pageSizeFactor, 10, "Factor for size of each LSM level");
+DEFINE_bool(allInOneKVStore, false, "Have a single BTree/LSM-Tree for TPCC");

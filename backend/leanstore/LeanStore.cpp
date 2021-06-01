@@ -187,30 +187,67 @@ void LeanStore::startProfilingThread()
 // -------------------------------------------------------------------------------------
 storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
 {
-   assert(btrees_ll.find(name) == btrees_ll.end());
-   auto& btree = btrees_ll[name];
-   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
-   auto& bf = buffer_manager->allocatePage();
-   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
-   bf.header.keep_in_memory = true;
-   bf.page.dt_id = dtid;
-   guard.unlock();
-   btree.create(dtid, &bf);
-   return btree;
+   if (FLAGS_allInOneKVStore) {
+      if (!btrees_ll.empty()) {
+         return btrees_ll[name];
+      }
+      else {
+         assert(btrees_ll.find(name) == btrees_ll.end());
+         auto& btree = btrees_ll[name];
+         DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
+         auto& bf = buffer_manager->allocatePage();
+         Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+         bf.header.keep_in_memory = true;
+         bf.page.dt_id = dtid;
+         guard.unlock();
+         btree.create(dtid, &bf);
+         return btree;
+      }
+   }
+   else {
+      assert(btrees_ll.find(name) == btrees_ll.end());
+      auto& btree = btrees_ll[name];
+      DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
+      auto& bf = buffer_manager->allocatePage();
+      Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+      bf.header.keep_in_memory = true;
+      bf.page.dt_id = dtid;
+      guard.unlock();
+      btree.create(dtid, &bf);
+      return btree;
+   }
 }
 
 storage::lsmTree::LSM& LeanStore::registerLsmTree(string name)
 {
-   assert(lsmTrees.find(name) == lsmTrees.end());
-   auto& lsmTree = lsmTrees[name];
-   DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
-   auto& bf = buffer_manager->allocatePage();
-   Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
-   bf.header.keep_in_memory = true;
-   bf.page.dt_id = dtid;
-   guard.unlock();
-   lsmTree.create(dtid, &bf);
-   return lsmTree;
+   if (FLAGS_allInOneKVStore) {
+      if (!lsmTrees.empty()) {
+         return lsmTrees[name];
+      } else {
+         assert(lsmTrees.find(name) == lsmTrees.end());
+         auto& lsmTree = lsmTrees[name];
+         DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
+         auto& bf = buffer_manager->allocatePage();
+         Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+         bf.header.keep_in_memory = true;
+         bf.page.dt_id = dtid;
+         guard.unlock();
+         lsmTree.create(dtid, &bf);
+         return lsmTree;
+      }
+   }
+   else {
+      assert(lsmTrees.find(name) == lsmTrees.end());
+      auto& lsmTree = lsmTrees[name];
+      DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
+      auto& bf = buffer_manager->allocatePage();
+      Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
+      bf.header.keep_in_memory = true;
+      bf.page.dt_id = dtid;
+      guard.unlock();
+      lsmTree.create(dtid, &bf);
+      return lsmTree;
+   }
 }
 
 // -------------------------------------------------------------------------------------
