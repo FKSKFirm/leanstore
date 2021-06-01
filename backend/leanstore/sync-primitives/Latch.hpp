@@ -173,7 +173,10 @@ struct Guard {
       if (state == GUARD_STATE::OPTIMISTIC) {
          const u64 new_version = version + LATCH_EXCLUSIVE_BIT;
          u64 expected = version;
-         latch->mutex.lock();  // changed from try_lock because of possible retries b/c lots of readers
+         //latch->mutex.lock();  // changed from try_lock because of possible retries b/c lots of readers
+         if (!latch->mutex.try_lock()) {
+            jumpmu::jump();
+         }
          if (!latch->ref().compare_exchange_strong(expected, new_version)) {
             latch->mutex.unlock();
             jumpmu::jump();
