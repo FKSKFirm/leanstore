@@ -59,7 +59,7 @@ unsigned commonPrefix(uint8_t* a, unsigned lenA, uint8_t* b, unsigned lenB)
    return i;
 }
 
-void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyStorage, JMUW<vector<uint8_t>>& payloadStorage, btree::BTreeLL& btree, bool isFirstNode, tuple<u8*,u16> lowerFenceKey, bool isLastNode)
+void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyStorage, JMUW<vector<uint8_t>>& payloadStorage, btree::BTreeLL& btree, bool isFirstNode, bool isLastNode)
 {
    //added while true with jumpmuTry since new Page allocation failed (dram_free_list empty, partition.dram_free_list.pop() fails)
    while (true) {
@@ -417,9 +417,9 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
       JMUW<vector<uint64_t>> hashes;
 
       bool lowestNode = true;
-      tuple<u8*,u16> lowerFenceKey = make_tuple(nullptr,0);
+      u16 lowerFenceLength = 0;
 
-      kvEntries->push_back({0, 1, 0, 0, false});
+      kvEntries->push_back({0, 0, 0, 0, false});
       keyStorage->insert(keyStorage->end(), 0);
 
       while (true) {
@@ -436,16 +436,19 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                   uint8_t* payload = payloadStorage->data() + payloadStorage->size() - entryForLastNode.payloadLen;
                   kvEntries->pop_back();
 
-                  buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey, false);
-                  lowerFenceKey = make_tuple((kvEntries->back().keyOffset + keyStorage->data()), kvEntries->back().keyLen);
+                  buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, false);
+                  lowerFenceLength = kvEntries->back().keyLen;
+                  JMUW<vector<uint8_t>> lowerFenceMerker;
+                  lowerFenceMerker->reserve(kvEntries->back().keyLen);
+                  lowerFenceMerker->insert(lowerFenceMerker->end(), (kvEntries->back().keyOffset + keyStorage->data()), (kvEntries->back().keyOffset + keyStorage->data()) + lowerFenceLength);
 
                   kvEntries->clear();
                   keyStorage->clear();
                   payloadStorage->clear();
 
                   //lower fence for last node
-                  kvEntries->push_back({0, get<1>(lowerFenceKey), 0, 0, false});
-                  keyStorage->insert(keyStorage->end(), get<0>(lowerFenceKey), get<0>(lowerFenceKey) + get<1>(lowerFenceKey));
+                  kvEntries->push_back({0, lowerFenceLength, 0, 0, false});
+                  keyStorage->insert(keyStorage->end(), lowerFenceMerker->data(), lowerFenceMerker->data() + lowerFenceLength);
                   // first and last entry for last node
                   unsigned keyOffset = keyStorage->end() - keyStorage->begin();
                   unsigned payloadOffset = payloadStorage->end() - payloadStorage->begin();
@@ -455,7 +458,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                }
 
 
-               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey, true);
+               buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, true);
 
                assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree.meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
@@ -539,9 +542,13 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
             entryCount += kvEntries->size();
             if (kvEntries->front().keyLen == kvEntries->back().keyLen)
                assert(std::memcmp((kvEntries->back().keyOffset + keyStorage->data()), (kvEntries->front().keyOffset + keyStorage->data()), kvEntries->front().keyLen) != 0);
-            buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey, false);  // could pick shorter separator here
-            lowerFenceKey = make_tuple((kvEntries->back().keyOffset + keyStorage->data()), kvEntries->back().keyLen);
+            buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, false);  // could pick shorter separator here
+            lowerFenceLength = kvEntries->back().keyLen;
             lowestNode = false;
+
+            JMUW<vector<uint8_t>> lowerFenceMerker;
+            lowerFenceMerker->reserve(kvEntries->back().keyLen);
+            lowerFenceMerker->insert(lowerFenceMerker->end(), (kvEntries->back().keyOffset + keyStorage->data()), (kvEntries->back().keyOffset + keyStorage->data()) + lowerFenceLength);
 
             kvEntries->clear();
             keyStorage->clear();
@@ -549,9 +556,9 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
             totalKeySize = 0;
             totalPayloadSize = 0;
 
-            kvEntries->push_back({0, get<1>(lowerFenceKey), 0, 0, false});
-            keyStorage->insert(keyStorage->end(), get<0>(lowerFenceKey), get<0>(lowerFenceKey) + get<1>(lowerFenceKey));
-            totalKeySize += get<1>(lowerFenceKey);
+            kvEntries->push_back({0, lowerFenceLength, 0, 0, false});
+            keyStorage->insert(keyStorage->end(), lowerFenceMerker->data(), lowerFenceMerker->data() + lowerFenceLength);
+            totalKeySize += lowerFenceLength;
 
          } else {
             // key fits, buffer it
@@ -1218,7 +1225,6 @@ OP_RESULT LSM::insertWithDeletionMarkerUpdateMarker(u8* key, u16 keyLength, u8* 
          // lookup tiers
          // optional: parallel lookup with queue
          for (unsigned i = 0; i < tiers.size(); i++) {
-            // TODO enable filter lookup again
             if (!tiers[i]->filter.lookup(key, keyLength)) {
                // value does not occur in tiers[i]
                continue;
