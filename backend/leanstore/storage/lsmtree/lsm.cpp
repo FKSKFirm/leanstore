@@ -83,7 +83,8 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
          new_node->count = entries->size()-1;
          assert(new_node->count>0);
          for (unsigned i = 1; i < entries->size(); i++) {
-            //cout << "Key: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(entries.obj[i].keyOffset + keyStorage->data())) ^ (1ul << 31)) << endl;
+            //if (entries.obj[i].keyLen == 4)
+               //cout << "Key: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(entries.obj[i].keyOffset + keyStorage->data())) ^ (1ul << 31)) << endl;
             //cout << "KeyLen: " << entries.obj[i].keyLen << endl;
             new_node->storeKeyValueWithDeletionMarker(i - 1, entries.obj[i].keyOffset + keyStorage->data(), entries.obj[i].keyLen,
                                                       entries.obj[i].payloadOffset + payloadStorage->data(), entries.obj[i].payloadLen,
@@ -92,11 +93,13 @@ void buildNode(JMUW<vector<KeyValueEntry>>& entries, JMUW<vector<uint8_t>>& keyS
          if (!isFirstNode) {
             new_node->insertFence(new_node->lower_fence, entries->front().keyOffset + keyStorage->data(),
                                   entries->front().keyLen);
-            //cout << "LowerFence: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(new_node->getLowerFenceKey())) ^ (1ul << 31)) << endl;
+            //if (entries->front().keyLen == 4)
+               //cout << "LowerFence: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(new_node->getLowerFenceKey())) ^ (1ul << 31)) << endl;
          }
          if (!isLastNode) {
             new_node->insertFence(new_node->upper_fence, entries->back().keyOffset + keyStorage->data(), entries->back().keyLen);
-            //cout << "UpperFence: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(new_node->getUpperFenceKey())) ^ (1ul << 31)) << endl;
+            //if (entries->back().keyLen == 4)
+               //cout << "UpperFence: " << (__builtin_bswap32(*reinterpret_cast<const uint32_t*>(new_node->getUpperFenceKey())) ^ (1ul << 31)) << endl;
          }
          new_node->makeHint();
 
@@ -534,6 +537,8 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
             // key does not fit, create new page
             kvEntries->pop_back();
             entryCount += kvEntries->size();
+            if (kvEntries->front().keyLen == kvEntries->back().keyLen)
+               assert(std::memcmp((kvEntries->back().keyOffset + keyStorage->data()), (kvEntries->front().keyOffset + keyStorage->data()), kvEntries->front().keyLen) != 0);
             buildNode(kvEntries, keyStorage, payloadStorage, levelToReplace->tree, lowestNode, lowerFenceKey, false);  // could pick shorter separator here
             lowerFenceKey = make_tuple((kvEntries->back().keyOffset + keyStorage->data()), kvEntries->back().keyLen);
             lowestNode = false;
@@ -1207,7 +1212,8 @@ OP_RESULT LSM::insertWithDeletionMarkerUpdateMarker(u8* key, u16 keyLength, u8* 
       } else if (lookupResult == OP_RESULT::LSM_DELETED) {
          // case2.1
          // real delete + insert
-         inMemBTree->remove(key, keyLength);
+         lookupResult = inMemBTree->remove(key, keyLength);
+         assert(lookupResult==OP_RESULT::OK);
       } else {
          // lookup tiers
          // optional: parallel lookup with queue
