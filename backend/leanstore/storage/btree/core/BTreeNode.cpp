@@ -96,7 +96,10 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    {
       assert(canInsert(key_len, payload_length));
       s32 exact_pos = lowerBound<true>(key, key_len);
-      static_cast<void>(exact_pos);
+      //static_cast<void>(exact_pos);
+      if(exact_pos != -1) {
+         exact_pos = lowerBound<true>(key, key_len);
+      }
       assert(exact_pos == -1);  // assert for duplicates
    }
    // -------------------------------------------------------------------------------------
@@ -347,23 +350,18 @@ u16 BTreeNode::commonPrefix(u16 slotA, u16 slotB)
 // -------------------------------------------------------------------------------------
 BTreeNode::SeparatorInfo BTreeNode::findSep()
 {
+   assert(count > 1);
    if (isInner())
       return SeparatorInfo{getFullKeyLen(count / 2), static_cast<u16>(count / 2), false};
 
    u16 lower = count / 2 - count / 16;
-   u16 upper = count / 2 + count / 16;
+   u16 upper = count / 2;
    // does not work under optimistic mode assert(upper < count);
-   u16 maxPos = count / 2;
-   s16 maxPrefix = commonPrefix(maxPos, 0);
-   //TODO: ask, if it makes sense to go to upper
-   for (u32 i = lower; i < upper; i++) {
-      s32 prefix = commonPrefix(i, 0);
-      //TODO: ask, because prefix of i>maxPos is never > than maxPrefix, only maybe the same?
-      if (prefix > maxPrefix) {
-         maxPrefix = prefix;
-         maxPos = i;
-      }
-   }
+   u16 maxPos = count / 2 - count / 16;
+   s16 maxPrefix = commonPrefix(lower, 0);
+   if (maxPrefix != commonPrefix(upper - 1, 0))
+      for (maxPos = lower + 1; (maxPos < upper) && (commonPrefix(maxPos, 0) == maxPrefix); maxPos++)
+         ;
    // e.g. prefix=ABC key[0]=(ABC)000 000 & key[maxPos]=(ABC)000 999 and key[maxPos+1]=(ABC)002 000  =>  common here=2 (trunc=true)
    // TODO: is this not broken? insert value (ABC)001 000 ?
    // or e.g. prefix=ABC key[0]=(ABC)000 & key[maxPos]=(ABC)001 and key[maxPos+1]=(ABC)002  =>  common here=2
