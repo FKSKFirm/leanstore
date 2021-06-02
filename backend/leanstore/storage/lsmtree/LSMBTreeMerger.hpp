@@ -19,6 +19,7 @@ namespace leanstore
             HybridPageGuard<btree::BTreeNode> leaf;
             s32 positionInNode = -1;
             bool done = false;
+            s32 currentLevel = 0;
 
             LSMBTreeMerger(btree::BTreeGeneric& oldTree) : btree(oldTree) { }
             ~LSMBTreeMerger() { leaf.unlock(); }
@@ -28,6 +29,7 @@ namespace leanstore
                   jumpmuTry()
                   {
                      leaf.unlock();
+                     currentLevel = 0;// 0=root
                      HybridPageGuard<btree::BTreeNode> parent_guard(btree.meta_node_bf);
                      HybridPageGuard current_node(parent_guard, parent_guard->upper);
 
@@ -50,8 +52,10 @@ namespace leanstore
                            childToFollow = &parent_guard->upper;
                         }
                         current_node = HybridPageGuard(parent_guard, *childToFollow);
+                        currentLevel++;
                      }
                      if (current_node->count == 0) {
+                        assert(false);
                         done = true;
                         jumpmu_break;
                      }
@@ -78,6 +82,36 @@ namespace leanstore
                }
             }
 
+            void findParentAndLatch(HybridPageGuard<btree::BTreeNode>& target_guard, const u8* key, const u16 key_length)
+            {
+               while (true) {
+                  jumpmuTry()
+                     {
+                        target_guard.unlock();
+                        // get the meta node
+                        HybridPageGuard<btree::BTreeNode> p_guard(btree.meta_node_bf);
+                        // p_guard->upper is root, target_guard set to the root node
+                        target_guard = HybridPageGuard<btree::BTreeNode>(p_guard, p_guard->upper);
+                        // -------------------------------------------------------------------------------------
+                        u16 volatile level = 0;
+                        // -------------------------------------------------------------------------------------
+                        // search for the leaf node
+                        while (currentLevel > level+1) {
+                           // search in current node (target_guard) to correct link to child
+                           Swip<btree::BTreeNode>& c_swip = target_guard->lookupInner(key, key_length);
+                           p_guard = std::move(target_guard);
+                           target_guard = HybridPageGuard(p_guard, c_swip);
+                           level++;
+                        }
+                        // -------------------------------------------------------------------------------------
+                        p_guard.unlock();
+                        target_guard.toExclusive();
+                        jumpmu_return;
+                     }
+                  jumpmuCatch() { }
+               }
+            }
+
             bool nextLeaf() {
                // findParent(this node) and lock it exclusive
                //    if its the meta_node: return false
@@ -87,21 +121,18 @@ namespace leanstore
                //    get the next leaf (follow in every inner node child0 or upper) / could use moveToFirstLeaf as well
                // if the parent node has no more entries:
                //    call nextLeaf()
+
+               if (currentLevel == 0) {
+                  leaf.unlock();
+                  done = true;
+                  return false;
+               }
+
                while (true) {
                   jumpmuTry()
                   {
-                     /*const u16 key_length = leaf->upper_fence.length;
-                     u8 key[key_length];
-                     std::memcpy(key, leaf->getUpperFenceKey(), leaf->upper_fence.length);
-
-                     leaf.unlock();
-
-                     btree.findLeafAndLatchParent<LATCH_FALLBACK_MODE::EXCLUSIVE>(leaf, key, key_length);
-                     positionInNode = 0;
-*/
-                     auto parent = btree.findParent(btree, *leaf.bufferFrame);
-                     HybridPageGuard<btree::BTreeNode> parentNodeGuard = parent.getParentReadPageGuard<btree::BTreeNode>();
-                     parentNodeGuard.toExclusive();
+                     HybridPageGuard<btree::BTreeNode> parentNodeGuard;
+                     findParentAndLatch(parentNodeGuard, leaf.ptr()->getUpperFenceKey(), leaf.ptr()->upper_fence.length);
 
                      if (parentNodeGuard.bufferFrame == btree.meta_node_bf) {
                         // merge done
@@ -114,7 +145,8 @@ namespace leanstore
                         leaf.toExclusive();
                         assert(leaf.bufferFrame != btree.meta_node_bf);
                         leaf.reclaim();
-                        if (parentNodeGuard.ptr()->count == 0) {
+                        if (parentNodeGuard->count == 0) {
+                           currentLevel--;
                            // the leaf was pointed by the upper ptr, so we can reclaim this parent as well
                            leaf = std::move(parentNodeGuard);
                            leaf.toExclusive();
@@ -122,7 +154,7 @@ namespace leanstore
                            jumpmu_return ret;
                         }
                         else {
-                           parentNodeGuard.ptr()->removeSlot(0);
+                           parentNodeGuard->removeSlot(0);
                            parentNodeGuard.unlock();
                            moveToFirstLeaf();
                            jumpmu_return true;
