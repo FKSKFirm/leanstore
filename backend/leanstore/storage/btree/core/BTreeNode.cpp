@@ -351,25 +351,35 @@ u16 BTreeNode::commonPrefix(u16 slotA, u16 slotB)
 BTreeNode::SeparatorInfo BTreeNode::findSep()
 {
    assert(count > 1);
-   if (isInner())
-      return SeparatorInfo{getFullKeyLen(count / 2), static_cast<u16>(count / 2), false};
-
-   u16 lower = count / 2 - count / 16;
-   u16 upper = count / 2;
-   // does not work under optimistic mode assert(upper < count);
-   u16 maxPos = count / 2 - count / 16;
-   s16 maxPrefix = commonPrefix(lower, 0);
-   if (maxPrefix != commonPrefix(upper - 1, 0))
-      for (maxPos = lower + 1; (maxPos < upper) && (commonPrefix(maxPos, 0) == maxPrefix); maxPos++)
-         ;
-   // e.g. prefix=ABC key[0]=(ABC)000 000 & key[maxPos]=(ABC)000 999 and key[maxPos+1]=(ABC)002 000  =>  common here=2 (trunc=true)
-   // TODO: is this not broken? insert value (ABC)001 000 ?
-   // or e.g. prefix=ABC key[0]=(ABC)000 & key[maxPos]=(ABC)001 and key[maxPos+1]=(ABC)002  =>  common here=2
-   unsigned common = commonPrefix(maxPos, maxPos + 1);
-   if ((slot[maxPos].key_len > common) && (slot[maxPos + 1].key_len > common + 1)) {
-      return SeparatorInfo{static_cast<u16>(prefix_length + common + 1), maxPos, true};
+   if (isInner()) {
+      // Inner nodes are split in the middle
+      u16 slotId = count / 2;
+      return SeparatorInfo{static_cast<u16>(prefix_length + slot[slotId].key_len), slotId, false};
    }
-   return SeparatorInfo{getFullKeyLen(maxPos), maxPos, false};
+
+   // Find good separator slot
+   u16 bestPrefixLength, bestSlot;
+   if (count > 16) {
+      u16 lower = (count / 2) - (count / 16);
+      u16 upper = (count / 2);
+
+      bestPrefixLength = commonPrefix(lower, 0);
+      bestSlot = lower;
+
+      if (bestPrefixLength != commonPrefix(upper - 1, 0))
+         for (bestSlot = lower + 1; (bestSlot < upper) && (commonPrefix(bestSlot, 0) == bestPrefixLength); bestSlot++)
+            ;
+   } else {
+      bestSlot = (count - 1) / 2;
+      bestPrefixLength = commonPrefix(bestSlot, 0);
+   }
+
+   // Try to truncate separator
+   u16 common = commonPrefix(bestSlot, bestSlot + 1);
+   if ((bestSlot + 1 < count) && (slot[bestSlot].key_len > common) && (slot[bestSlot + 1].key_len > (common + 1)))
+      return SeparatorInfo{static_cast<u16>(prefix_length + common + 1), bestSlot, true};
+
+   return SeparatorInfo{static_cast<u16>(prefix_length + slot[bestSlot].key_len), bestSlot, false};
 }
 // -------------------------------------------------------------------------------------
 void BTreeNode::getSep(u8* sepKeyOut, BTreeNodeHeader::SeparatorInfo info)
@@ -410,7 +420,7 @@ Swip<BTreeNode>& BTreeNode::lookupInner(const u8* key, u16 keyLength)
 void BTreeNode::split(ExclusivePageGuard<BTreeNode>& parent, ExclusivePageGuard<BTreeNode>& nodeLeft, u16 sepSlot, u8* sepKey, u16 sepLength)
 {
    // PRE: current, parent and nodeLeft are x locked
-   // assert(sepSlot > 0); TODO: really ?
+   assert(sepSlot > 0);
    assert(sepSlot < (EFFECTIVE_PAGE_SIZE / sizeof(SwipType)));
    // -------------------------------------------------------------------------------------
    nodeLeft->setFences(getLowerFenceKey(), lower_fence.length, sepKey, sepLength);
