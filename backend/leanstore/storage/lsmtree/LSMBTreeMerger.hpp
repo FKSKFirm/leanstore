@@ -44,14 +44,15 @@ namespace leanstore
 
                      while (!current_node->is_leaf) {
                         // go one level deeper
-                        parent_guard = std::move(current_node);
                         Swip<btree::BTreeNode>* childToFollow;
-                        if (parent_guard->count > 0) {
-                           childToFollow = &parent_guard->getChild(0);
+                        if (current_node->count > 0) {
+                           childToFollow = &current_node->getChild(0);
                         } else {
-                           childToFollow = &parent_guard->upper;
+                           childToFollow = &current_node->upper;
                         }
+                        parent_guard = std::move(current_node);
                         current_node = HybridPageGuard(parent_guard, *childToFollow);
+                        current_node.bufferFrame->header.keep_in_memory = true;
                         currentLevel++;
                      }
                      if (current_node->count == 0) {
@@ -98,9 +99,14 @@ namespace leanstore
                         // search for the leaf node
                         while (currentLevel > level+1) {
                            // search in current node (target_guard) to correct link to child
-                           Swip<btree::BTreeNode>& c_swip = target_guard->lookupInner(key, key_length);
+                           Swip<btree::BTreeNode>* c_swip;
+                           if (target_guard->count > 0) {
+                              c_swip = &target_guard->getChild(0);
+                           } else {
+                              c_swip = &target_guard->upper;
+                           }
                            p_guard = std::move(target_guard);
-                           target_guard = HybridPageGuard(p_guard, c_swip);
+                           target_guard = HybridPageGuard(p_guard, *c_swip);
                            level++;
                         }
                         // -------------------------------------------------------------------------------------
@@ -132,7 +138,7 @@ namespace leanstore
                   jumpmuTry()
                   {
                      HybridPageGuard<btree::BTreeNode> parentNodeGuard;
-                     findParentAndLatch(parentNodeGuard, leaf.ptr()->getUpperFenceKey(), leaf.ptr()->upper_fence.length);
+                     findParentAndLatch(parentNodeGuard, leaf->getUpperFenceKey(), leaf->upper_fence.length);
 
                      if (parentNodeGuard.bufferFrame == btree.meta_node_bf) {
                         // merge done
