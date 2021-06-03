@@ -61,7 +61,7 @@ int main(int argc, char** argv)
    auto& crm = db.getCRManager();
 
    /* ********************* Own Test begin ****************
-   test = LeanStoreAdapter<test_t>(db, "own_test");
+   test = LeanStoreAdapter<test_t>(db, "own_test", 0);
 
    uint64_t zaehler = ITEMS_NO; //100k
    for (uint64_t count = 0; count < 1000; count++) {
