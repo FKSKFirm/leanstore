@@ -16,4 +16,5 @@ git-ignore
 debug*
 release*
 clang*
+cmake/
 paper*
