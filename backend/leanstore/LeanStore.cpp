@@ -53,10 +53,8 @@ LeanStore::LeanStore()
    buffer_manager = make_unique<storage::BufferManager>(ssd_fd);
    BMC::global_bf = buffer_manager.get();
    // -------------------------------------------------------------------------------------
-   DataTypeRegistry::global_dt_registry.registerDatastructureType(0, storage::btree::BTreeLL::getMeta());
-   //DataTypeRegistry::global_dt_registry.registerDatastructureType(2, storage::keyValueDataStore::BTreeVI::getMeta());
-   DataTypeRegistry::global_dt_registry.registerDatastructureType(1, storage::lsmTree::LSM::getMeta());
-   //DataTypeRegistry::global_dt_registry.registerDatastructureType(4, storage::lsmtree::LSMTree::getMeta());
+   DTRegistry::global_dt_registry.registerDatastructureType(0, storage::btree::BTreeLL::getMeta());
+   DTRegistry::global_dt_registry.registerDatastructureType(1, storage::lsmTree::LSM::getMeta());
    // -------------------------------------------------------------------------------------
    u64 end_of_block_device;
    //if (FLAGS_wal_offset_gib == 0) {
@@ -64,8 +62,8 @@ LeanStore::LeanStore()
    //} else {
    //   end_of_block_device = FLAGS_wal_offset_gib * 1024 * 1024 * 1024;
    //}
-   cr_manager = make_unique<cr::WorkerThreadManager>();
-   cr::WorkerThreadManager::global = cr_manager.get();
+   cr_manager = make_unique<cr::CRManager>(ssd_fd, end_of_block_device);
+   cr::CRManager::global = cr_manager.get();
 }
 // -------------------------------------------------------------------------------------
 LeanStore::~LeanStore()
@@ -140,14 +138,15 @@ void LeanStore::startProfilingThread()
          const double instr_per_tx = cpu_table.workers_agg_events["instr"] / tx;
          const double cycles_per_tx = cpu_table.workers_agg_events["cycle"] / tx;
          const double l1_per_tx = cpu_table.workers_agg_events["L1-miss"] / tx;
+         const double lc_per_tx = cpu_table.workers_agg_events["LLC-miss"] / tx;
          // using RowType = std::vector<variant<std::string, const char*, Table>>;
          if (FLAGS_print_tx_console) {
             tabulate::Table table;
-            table.add_row({"t", "TX P", "TX A", "TX C", "W MiB", "R MiB", "Instrs/TX", "Cycles/TX", "CPUs", "L1/TX", "WAL T", "WAL R G", "WAL W G",
+            table.add_row({"t", "TX P", "TX A", "TX C", "W MiB", "R MiB", "Instrs/TX", "Cycles/TX", "CPUs", "L1/TX", "LLC", "WAL T", "WAL R G", "WAL W G",
                            "GCT Rounds"});
             table.add_row({std::to_string(seconds), cr_table.get("0", "tx"), cr_table.get("0", "tx_abort"), cr_table.get("0", "gct_committed_tx"),
                            bm_table.get("0", "w_mib"), bm_table.get("0", "r_mib"), std::to_string(instr_per_tx), std::to_string(cycles_per_tx),
-                           std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx),
+                           std::to_string(cpu_table.workers_agg_events["CPU"]), std::to_string(l1_per_tx), std::to_string(lc_per_tx),
                            cr_table.get("0", "gct_rounds")});
             // -------------------------------------------------------------------------------------
             table.format().width(10);
@@ -194,7 +193,7 @@ storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
       else {
          assert(btrees_ll.find(name) == btrees_ll.end());
          auto& btree = btrees_ll[name];
-         DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
+         DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
          auto& bf = buffer_manager->allocatePage();
          Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
          bf.header.keep_in_memory = true;
@@ -207,7 +206,7 @@ storage::btree::BTreeLL& LeanStore::registerBTreeLL(string name)
    else {
       assert(btrees_ll.find(name) == btrees_ll.end());
       auto& btree = btrees_ll[name];
-      DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
+      DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(0, reinterpret_cast<void*>(&btree), name);
       auto& bf = buffer_manager->allocatePage();
       Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
       bf.header.keep_in_memory = true;
@@ -226,7 +225,7 @@ storage::lsmTree::LSM& LeanStore::registerLsmTree(string name)
       } else {
          assert(lsmTrees.find(name) == lsmTrees.end());
          auto& lsmTree = lsmTrees[name];
-         DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
+         DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
          auto& bf = buffer_manager->allocatePage();
          Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
          bf.header.keep_in_memory = true;
@@ -239,7 +238,7 @@ storage::lsmTree::LSM& LeanStore::registerLsmTree(string name)
    else {
       assert(lsmTrees.find(name) == lsmTrees.end());
       auto& lsmTree = lsmTrees[name];
-      DTID dtid = DataTypeRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
+      DTID dtid = DTRegistry::global_dt_registry.registerDatastructureInstance(1, reinterpret_cast<void*>(&lsmTree), name);
       auto& bf = buffer_manager->allocatePage();
       Guard guard(bf.header.latch, GUARD_STATE::EXCLUSIVE);
       bf.header.keep_in_memory = true;
@@ -261,15 +260,4 @@ LeanStore::GlobalStats LeanStore::getGlobalStats()
    return global_stats;
 }
 // -------------------------------------------------------------------------------------
-void LeanStore::persist()
-{
-   // TODO
-}
-// -------------------------------------------------------------------------------------
-void LeanStore::restore()
-{
-   // TODO
-}
-// -------------------------------------------------------------------------------------
 }  // namespace leanstore
-// -------------------------------------------------------------------------------------

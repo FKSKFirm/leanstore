@@ -26,7 +26,7 @@ class LeanStore
    // -------------------------------------------------------------------------------------
    s32 ssd_fd;
    // -------------------------------------------------------------------------------------
-   unique_ptr<cr::WorkerThreadManager> cr_manager;
+   unique_ptr<cr::CRManager> cr_manager;
    unique_ptr<storage::BufferManager> buffer_manager;
    // -------------------------------------------------------------------------------------
    atomic<u64> bg_threads_counter = 0;
@@ -37,6 +37,7 @@ class LeanStore
    // -------------------------------------------------------------------------------------
   public:
    LeanStore();
+   ~LeanStore();
    // -------------------------------------------------------------------------------------
    template <typename T>
    void registerConfigEntry(string name, T value)
@@ -53,13 +54,10 @@ class LeanStore
    storage::lsmTree::LSM& retrieveLsmTree(string name) { return lsmTrees[name]; }
    // -------------------------------------------------------------------------------------
    storage::BufferManager& getBufferManager() { return *buffer_manager; }
-   cr::WorkerThreadManager& getCRManager() { return *cr_manager; }
+   cr::CRManager& getCRManager() { return *cr_manager; }
    // -------------------------------------------------------------------------------------
    void startProfilingThread();
-   void persist();
-   void restore();
    // -------------------------------------------------------------------------------------
-   ~LeanStore();
 };
 // -------------------------------------------------------------------------------------
 }  // namespace leanstore

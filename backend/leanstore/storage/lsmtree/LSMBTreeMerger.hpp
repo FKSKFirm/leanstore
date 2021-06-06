@@ -52,7 +52,7 @@ namespace leanstore
                         }
                         parent_guard = std::move(current_node);
                         current_node = HybridPageGuard(parent_guard, *childToFollow);
-                        current_node.bufferFrame->header.keep_in_memory = true;
+                        current_node.bf->header.keep_in_memory = true;
                         currentLevel++;
                      }
                      if (current_node->count == 0) {
@@ -83,7 +83,7 @@ namespace leanstore
                }
             }
 
-            void findParentAndLatch(HybridPageGuard<btree::BTreeNode>& target_guard, const u8* key, const u16 key_length)
+            void findParentAndLatch(HybridPageGuard<btree::BTreeNode>& target_guard)
             {
                while (true) {
                   jumpmuTry()
@@ -138,19 +138,20 @@ namespace leanstore
                   jumpmuTry()
                   {
                      HybridPageGuard<btree::BTreeNode> parentNodeGuard;
-                     findParentAndLatch(parentNodeGuard, leaf->getUpperFenceKey(), leaf->upper_fence.length);
+                     findParentAndLatch(parentNodeGuard);
 
-                     if (parentNodeGuard.bufferFrame == btree.meta_node_bf) {
+                     if (parentNodeGuard.bf == btree.meta_node_bf) {
                         // merge done
-                        assert(leaf.bufferFrame != btree.meta_node_bf);
+                        assert(leaf.bf != btree.meta_node_bf);
                         leaf.unlock();
                         done = true;
                         jumpmu_return false;
                      }
                      else {
                         leaf.toExclusive();
-                        assert(leaf.bufferFrame != btree.meta_node_bf);
+                        assert(leaf.bf != btree.meta_node_bf);
                         leaf.reclaim();
+                        parentNodeGuard.incrementGSN();
                         if (parentNodeGuard->count == 0) {
                            currentLevel--;
                            // the leaf was pointed by the upper ptr, so we can reclaim this parent as well

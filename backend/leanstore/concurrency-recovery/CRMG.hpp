@@ -20,11 +20,11 @@ namespace cr
 /*
   Manages a fixed number of worker threads, each one gets a partition
  */
-class WorkerThreadManager
+class CRManager
 {
   public:
    static constexpr u64 MAX_WORKER_THREADS = 256;
-   static WorkerThreadManager* global;
+   static CRManager* global;
    Worker* workers[MAX_WORKER_THREADS];
    // -------------------------------------------------------------------------------------
    std::atomic<u64> running_threads = 0;
@@ -42,8 +42,11 @@ class WorkerThreadManager
    WorkerThread worker_threads_meta[MAX_WORKER_THREADS];
    u32 workers_count;
    // -------------------------------------------------------------------------------------
-   WorkerThreadManager();
-   ~WorkerThreadManager();
+   const s32 ssd_fd;
+   const u64 end_of_block_device;
+   // -------------------------------------------------------------------------------------
+   CRManager(s32 ssd_fd, u64 end_of_block_device);
+   ~CRManager();
    // -------------------------------------------------------------------------------------
    void scheduleJobAsync(u64 t_i, std::function<void()> job);
    void scheduleJobSync(u64 t_i, std::function<void()> job);

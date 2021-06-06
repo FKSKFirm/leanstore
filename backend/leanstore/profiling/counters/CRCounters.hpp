@@ -9,9 +9,11 @@
 namespace leanstore
 {
 struct CRCounters {
+   atomic<s64> worker_id = -1;
    atomic<u64> gct_phase_1_ms = 0;
    atomic<u64> gct_phase_2_ms = 0;
    atomic<u64> gct_write_ms = 0;
+   atomic<u64> gct_write_bytes = 0;
    // -------------------------------------------------------------------------------------
    atomic<u64> gct_rounds = 0;
    atomic<u64> gct_committed_tx = 0;

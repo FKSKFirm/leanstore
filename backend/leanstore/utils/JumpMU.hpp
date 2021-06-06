@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <utility>
+
 #define JUMPMU_STACK_SIZE 20
 namespace jumpmu
 {

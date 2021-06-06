@@ -1,7 +1,7 @@
 #pragma once
-#include "types.hpp"
+#include "Types.hpp"
 // -------------------------------------------------------------------------------------
-#include "leanstore/storage/KeyValueInterface.hpp"
+#include "leanstore/KVInterface.hpp"
 #include "rocksdb/db.h"
 // -------------------------------------------------------------------------------------
 #include <cassert>
@@ -23,14 +23,13 @@ struct RocksDB {
       rocksdb::Options db_options;
       db_options.use_direct_reads = true;
       db_options.use_direct_io_for_flush_and_compaction = true;
-      db_options.db_write_buffer_size = FLAGS_dram_gib * 1024 * 1024 * 1024;
-      db_options.write_buffer_size = db_options.db_write_buffer_size;
-      db_options.max_bytes_for_level_base = db_options.db_write_buffer_size;
+      db_options.db_write_buffer_size = 0;  // disabled
+      // db_options.write_buffer_size = 64 * 1024 * 1024; keep the default
       db_options.create_if_missing = true;
       db_options.manual_wal_flush = true;
       db_options.compression = rocksdb::CompressionType::kNoCompression;
-      db_options.OptimizeLevelStyleCompaction(4ull * 1024 * 1024 * 1024);
-      db_options.row_cache = rocksdb::NewLRUCache(4ull * 1024 * 1024 * 1024);
+      // db_options.OptimizeLevelStyleCompaction(FLAGS_dram_gib * 1024 * 1024 * 1024);
+      db_options.row_cache = rocksdb::NewLRUCache(FLAGS_dram_gib * 1024 * 1024 * 1024);
       rocksdb::Status s = rocksdb::DB::Open(db_options, FLAGS_ssd_path, &db);
       if (!s.ok())
          cerr << s.ToString() << endl;
@@ -55,7 +54,7 @@ struct RocksDBAdapter {
    void insert(const typename Record::Key& key, const Record& record)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       rocksdb::Status s = map.db->Put(map.wo, RSlice(folded_key, folded_key_len), RSlice(&record, sizeof(record)));
       assert(s.ok());
@@ -65,7 +64,7 @@ struct RocksDBAdapter {
    void lookup1(const typename Record::Key& key, const Fn& fn)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       rocksdb::PinnableSlice value;
       rocksdb::Status s = map.db->Get(map.ro, map.db->DefaultColumnFamily(), RSlice(folded_key, folded_key_len), &value);
@@ -79,7 +78,7 @@ struct RocksDBAdapter {
    auto lookupField(const typename Record::Key& key, Field Record::*f)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       rocksdb::PinnableSlice value;
       rocksdb::Status s = map.db->Get(map.ro, map.db->DefaultColumnFamily(), RSlice(folded_key, folded_key_len), &value);
@@ -94,7 +93,7 @@ struct RocksDBAdapter {
    void update1(const typename Record::Key& key, const Fn& fn)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       std::string value;
       rocksdb::Status s = map.db->Get(map.ro, map.db->DefaultColumnFamily(), RSlice(folded_key, folded_key_len), &value);
@@ -108,7 +107,7 @@ struct RocksDBAdapter {
    bool erase(const typename Record::Key& key)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       rocksdb::Status s = map.db->Delete(map.wo, RSlice(folded_key, folded_key_len));
       if (s.ok()) {
@@ -128,12 +127,12 @@ struct RocksDBAdapter {
    void scan(const typename Record::Key& key, const Fn& fn, std::function<void()>)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       rocksdb::Iterator* it = map.db->NewIterator(map.ro);
       for (it->Seek(RSlice(folded_key, folded_key_len)); it->Valid() && getId(it->key()) == Record::id; it->Next()) {
          typename Record::Key s_key;
-         Record::unfoldRecord(reinterpret_cast<const u8*>(it->key().data() + sizeof(SEP)), s_key);
+         Record::unfoldKey(reinterpret_cast<const u8*>(it->key().data() + sizeof(SEP)), s_key);
          const Record& s_value = *reinterpret_cast<const Record*>(it->value().data());
          if (!fn(s_key, s_value))
             break;
@@ -146,12 +145,12 @@ struct RocksDBAdapter {
    void scanDesc(const typename Record::Key& key, const Fn& fn, std::function<void()>)
    {
       u8 folded_key[Record::maxFoldLength() + sizeof(SEP)];
-      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldRecord(folded_key + sizeof(SEP), key);
+      const u32 folded_key_len = fold(folded_key, Record::id) + Record::foldKey(folded_key + sizeof(SEP), key);
       // -------------------------------------------------------------------------------------
       rocksdb::Iterator* it = map.db->NewIterator(map.ro);
       for (it->SeekForPrev(RSlice(folded_key, folded_key_len)); it->Valid() && getId(it->key()) == Record::id; it->Prev()) {
          typename Record::Key s_key;
-         Record::unfoldRecord(reinterpret_cast<const u8*>(it->key().data() + sizeof(SEP)), s_key);
+         Record::unfoldKey(reinterpret_cast<const u8*>(it->key().data() + sizeof(SEP)), s_key);
          const Record& s_value = *reinterpret_cast<const Record*>(it->value().data());
          if (!fn(s_key, s_value))
             break;

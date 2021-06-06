@@ -9,7 +9,6 @@ namespace leanstore
 namespace profiling
 {
 // -------------------------------------------------------------------------------------
-// returns the name of the Table
 std::string ConfigsTable::getName()
 {
    return "configs";
@@ -49,10 +48,6 @@ void ConfigsTable::open()
    // -------------------------------------------------------------------------------------
    columns.emplace("c_zipf_factor", [&](Column& col) { col << FLAGS_zipf_factor; });
    columns.emplace("c_backoff", [&](Column& col) { col << FLAGS_backoff; });
-   // -------------------------------------------------------------------------------------
-   columns.emplace("c_si", [&](Column& col) { col << FLAGS_si; });
-   columns.emplace("c_vw", [&](Column& col) { col << FLAGS_vw; });
-   columns.emplace("c_vw_todo", [&](Column& col) { col << FLAGS_vw_todo; });
    // -------------------------------------------------------------------------------------
    for (auto& c : columns) {
       c.second.generator(c.second);

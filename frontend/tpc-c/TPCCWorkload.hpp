@@ -1,11 +1,11 @@
 #pragma once
-#include "schema.hpp"
+#include "Schema.hpp"
 #include "Units.hpp"
 // -------------------------------------------------------------------------------------
+#include "Types.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
-#include "types.hpp"
 // -------------------------------------------------------------------------------------
 #include <vector>
 using std::vector;
@@ -21,7 +21,7 @@ class TPCCWorkload
    static constexpr INTEGER C_LAST_LOAD_C = 157;  // in range [0, 255]
    static constexpr INTEGER C_LAST_RUN_C = 223;   // in range [0, 255]
    static constexpr INTEGER ITEMS_NO = 100000;    // 100K
-   // -------------------------------------------------------------------------------------
+                                                  // -------------------------------------------------------------------------------------
    AdapterType<warehouse_t>& warehouse;
    AdapterType<district_t>& district;
    AdapterType<customer_t>& customer;
@@ -36,7 +36,7 @@ class TPCCWorkload
    const bool order_wdc_index = true;
    const Integer warehouseCount;
    const Integer tpcc_remove;
-   const u64 analytical_query_pct;
+   const bool cross_warehouses;
    // -------------------------------------------------------------------------------------
    Integer urandexcept(Integer low, Integer high, Integer v)
    {
@@ -193,41 +193,41 @@ class TPCCWorkload
          Numeric i_price = item.lookupField({itemid}, &item_t::i_price);  // TODO: rollback on miss
          Varchar<24> s_dist;
          stock.lookup1({w_id, itemid}, [&](const stock_t& rec) {
-           switch (d_id) {
-              case 1:
-                 s_dist = rec.s_dist_01;
-                 break;
-              case 2:
-                 s_dist = rec.s_dist_02;
-                 break;
-              case 3:
-                 s_dist = rec.s_dist_03;
-                 break;
-              case 4:
-                 s_dist = rec.s_dist_04;
-                 break;
-              case 5:
-                 s_dist = rec.s_dist_05;
-                 break;
-              case 6:
-                 s_dist = rec.s_dist_06;
-                 break;
-              case 7:
-                 s_dist = rec.s_dist_07;
-                 break;
-              case 8:
-                 s_dist = rec.s_dist_08;
-                 break;
-              case 9:
-                 s_dist = rec.s_dist_09;
-                 break;
-              case 10:
-                 s_dist = rec.s_dist_10;
-                 break;
-              default:
-                 exit(1);
-                 throw;
-           }
+            switch (d_id) {
+               case 1:
+                  s_dist = rec.s_dist_01;
+                  break;
+               case 2:
+                  s_dist = rec.s_dist_02;
+                  break;
+               case 3:
+                  s_dist = rec.s_dist_03;
+                  break;
+               case 4:
+                  s_dist = rec.s_dist_04;
+                  break;
+               case 5:
+                  s_dist = rec.s_dist_05;
+                  break;
+               case 6:
+                  s_dist = rec.s_dist_06;
+                  break;
+               case 7:
+                  s_dist = rec.s_dist_07;
+                  break;
+               case 8:
+                  s_dist = rec.s_dist_08;
+                  break;
+               case 9:
+                  s_dist = rec.s_dist_09;
+                  break;
+               case 10:
+                  s_dist = rec.s_dist_10;
+                  break;
+               default:
+                  exit(1);
+                  throw;
+            }
          });
          Numeric ol_amount = qty * i_price * (1.0 + w_tax + d_tax) * (1.0 - c_discount);
          Timestamp ol_delivery_d = 0;  // NULL
@@ -252,7 +252,7 @@ class TPCCWorkload
       qtys.reserve(15);
       for (Integer i = 1; i <= ol_cnt; i++) {
          Integer supware = w_id;
-         if (urand(1, 100) == 1)  // remote transaction
+         if (cross_warehouses && urand(1, 100) == 1)  // ATTN:remote transaction
             supware = urandexcept(1, warehouseCount, w_id);
          Integer itemid = getItemID();
          if (false && (i == ol_cnt) && (urand(1, 100) == 1))  // invalid item => random
@@ -272,18 +272,20 @@ class TPCCWorkload
          neworder.scan(
              {w_id, d_id, minInteger},
              [&](const neworder_t::Key& key, const neworder_t&) {
-               if (key.no_w_id == w_id && key.no_d_id == d_id) {
-                  o_id = key.no_o_id;
-               }
-               return false;
+                if (key.no_w_id == w_id && key.no_d_id == d_id) {
+                   o_id = key.no_o_id;
+                }
+                return false;
              },
              [&]() { o_id = minInteger; });
-         if (o_id == minInteger)
+         // -------------------------------------------------------------------------------------
+         if (o_id == minInteger) {  // Should rarely happen
             continue;
+         }
+         // ensure(o_id != minInteger);
          // -------------------------------------------------------------------------------------
          if (tpcc_remove) {
             const auto ret = neworder.erase({w_id, d_id, o_id});
-            ensure(!FLAGS_si || ret);
          }
          // -------------------------------------------------------------------------------------
          // Integer ol_cnt = minInteger, c_id;
@@ -374,11 +376,11 @@ class TPCCWorkload
       orderline.scan(
           {w_id, d_id, min_ol_o_id, minInteger},
           [&](const orderline_t::Key& key, const orderline_t& rec) {
-            if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id < o_id && key.ol_o_id >= min_ol_o_id) {
-               items.push_back(rec.ol_i_id);
-               return true;
-            }
-            return false;
+             if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id < o_id && key.ol_o_id >= min_ol_o_id) {
+                items.push_back(rec.ol_i_id);
+                return true;
+             }
+             return false;
           },
           [&]() { items.clear(); });
       std::sort(items.begin(), items.end());
@@ -399,10 +401,10 @@ class TPCCWorkload
       Varchar<16> c_last;
       Numeric c_balance;
       customer.lookup1({w_id, d_id, c_id}, [&](const customer_t& rec) {
-        c_first = rec.c_first;
-        c_middle = rec.c_middle;
-        c_last = rec.c_last;
-        c_balance = rec.c_balance;
+         c_first = rec.c_first;
+         c_middle = rec.c_middle;
+         c_last = rec.c_last;
+         c_balance = rec.c_balance;
       });
 
       Integer o_id = -1;
@@ -412,22 +414,22 @@ class TPCCWorkload
          order_wdc.scanDesc(
              {w_id, d_id, c_id, std::numeric_limits<Integer>::max()},
              [&](const order_wdc_t::Key& key, const order_wdc_t&) {
-               assert(key.o_w_id == w_id);
-               assert(key.o_d_id == d_id);
-               assert(key.o_c_id == c_id);
-               o_id = key.o_id;
-               return false;
+                assert(key.o_w_id == w_id);
+                assert(key.o_d_id == d_id);
+                assert(key.o_c_id == c_id);
+                o_id = key.o_id;
+                return false;
              },
              [] {});
       } else {
          order.scanDesc(
              {w_id, d_id, std::numeric_limits<Integer>::max()},
              [&](const order_t::Key& key, const order_t& rec) {
-               if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
-                  o_id = key.o_id;
-                  return false;
-               }
-               return true;
+                if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
+                   o_id = key.o_id;
+                   return false;
+                }
+                return true;
              },
              [&]() {});
       }
@@ -437,8 +439,8 @@ class TPCCWorkload
       Integer o_carrier_id;
 
       order.lookup1({w_id, d_id, o_id}, [&](const order_t& rec) {
-        o_entry_d = rec.o_entry_d;
-        o_carrier_id = rec.o_carrier_id;
+         o_entry_d = rec.o_entry_d;
+         o_carrier_id = rec.o_carrier_id;
       });
       Integer ol_i_id;
       Integer ol_supply_w_id;
@@ -450,35 +452,33 @@ class TPCCWorkload
          orderline.scan(
              {w_id, d_id, o_id, minInteger},
              [&](const orderline_t::Key& key, const orderline_t& rec) {
-               if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
-                  ol_i_id = rec.ol_i_id;
-                  ol_supply_w_id = rec.ol_supply_w_id;
-                  ol_delivery_d = rec.ol_delivery_d;
-                  ol_quantity = rec.ol_quantity;
-                  ol_amount = rec.ol_amount;
-                  return true;
-               }
-               return false;
+                if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
+                   ol_i_id = rec.ol_i_id;
+                   ol_supply_w_id = rec.ol_supply_w_id;
+                   ol_delivery_d = rec.ol_delivery_d;
+                   ol_quantity = rec.ol_quantity;
+                   ol_amount = rec.ol_amount;
+                   return true;
+                }
+                return false;
              },
              [&]() {
-               // NOTHING
+                // NOTHING
              });
       }
    }
    // -------------------------------------------------------------------------------------
-
    void orderStatusName(Integer w_id, Integer d_id, Varchar<16> c_last)
-
    {
       vector<Integer> ids;
       customerwdl.scan(
           {w_id, d_id, c_last, {}},
           [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
-            if (key.c_w_id == w_id && key.c_d_id == d_id && key.c_last == c_last) {
-               ids.push_back(rec.c_id);
-               return true;
-            }
-            return false;
+             if (key.c_w_id == w_id && key.c_d_id == d_id && key.c_last == c_last) {
+                ids.push_back(rec.c_id);
+                return true;
+             }
+             return false;
           },
           [&]() { ids.clear(); });
       unsigned c_count = ids.size();
@@ -495,22 +495,22 @@ class TPCCWorkload
          order_wdc.scanDesc(
              {w_id, d_id, c_id, std::numeric_limits<Integer>::max()},
              [&](const order_wdc_t::Key& key, const order_wdc_t&) {
-               assert(key.o_w_id == w_id);
-               assert(key.o_d_id == d_id);
-               assert(key.o_c_id == c_id);
-               o_id = key.o_id;
-               return false;
+                assert(key.o_w_id == w_id);
+                assert(key.o_d_id == d_id);
+                assert(key.o_c_id == c_id);
+                o_id = key.o_id;
+                return false;
              },
              [] {});
       } else {
          order.scanDesc(
              {w_id, d_id, std::numeric_limits<Integer>::max()},
              [&](const order_t::Key& key, const order_t& rec) {
-               if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
-                  o_id = key.o_id;
-                  return false;
-               }
-               return true;
+                if (key.o_w_id == w_id && key.o_d_id == d_id && rec.o_c_id == c_id) {
+                   o_id = key.o_id;
+                   return false;
+                }
+                return true;
              },
              [&]() {});
          ensure(o_id > -1);
@@ -520,14 +520,14 @@ class TPCCWorkload
       orderline.scan(
           {w_id, d_id, o_id, minInteger},
           [&](const orderline_t::Key& key, const orderline_t& rec) {
-            if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
-               ol_delivery_d = rec.ol_delivery_d;
-               return true;
-            }
-            return false;
+             if (key.ol_w_id == w_id && key.ol_d_id == d_id && key.ol_o_id == o_id) {
+                ol_delivery_d = rec.ol_delivery_d;
+                return true;
+             }
+             return false;
           },
           []() {
-            // NOTHING
+             // NOTHING
           });
    }
    // -------------------------------------------------------------------------------------
@@ -570,13 +570,13 @@ class TPCCWorkload
       Varchar<9> d_zip;
       Numeric d_ytd;
       district.lookup1({w_id, d_id}, [&](const district_t& rec) {
-        d_name = rec.d_name;
-        d_street_1 = rec.d_street_1;
-        d_street_2 = rec.d_street_2;
-        d_city = rec.d_city;
-        d_state = rec.d_state;
-        d_zip = rec.d_zip;
-        d_ytd = rec.d_ytd;
+         d_name = rec.d_name;
+         d_street_1 = rec.d_street_1;
+         d_street_2 = rec.d_street_2;
+         d_city = rec.d_city;
+         d_state = rec.d_state;
+         d_zip = rec.d_zip;
+         d_ytd = rec.d_ytd;
       });
       district.update1(
           {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; });
@@ -587,11 +587,11 @@ class TPCCWorkload
       Numeric c_ytd_payment;
       Numeric c_payment_cnt;
       customer.lookup1({c_w_id, c_d_id, c_id}, [&](const customer_t& rec) {
-        c_data = rec.c_data;
-        c_credit = rec.c_credit;
-        c_balance = rec.c_balance;
-        c_ytd_payment = rec.c_ytd_payment;
-        c_payment_cnt = rec.c_payment_cnt;
+         c_data = rec.c_data;
+         c_credit = rec.c_credit;
+         c_balance = rec.c_balance;
+         c_ytd_payment = rec.c_ytd_payment;
+         c_payment_cnt = rec.c_payment_cnt;
       });
       Numeric c_new_balance = c_balance - h_amount;
       Numeric c_new_ytd_payment = c_ytd_payment + h_amount;
@@ -645,13 +645,13 @@ class TPCCWorkload
       Varchar<9> w_zip;
       Numeric w_ytd;
       warehouse.lookup1({w_id}, [&](const warehouse_t& rec) {
-        w_name = rec.w_name;
-        w_street_1 = rec.w_street_1;
-        w_street_2 = rec.w_street_2;
-        w_city = rec.w_city;
-        w_state = rec.w_state;
-        w_zip = rec.w_zip;
-        w_ytd = rec.w_ytd;
+         w_name = rec.w_name;
+         w_street_1 = rec.w_street_1;
+         w_street_2 = rec.w_street_2;
+         w_city = rec.w_city;
+         w_state = rec.w_state;
+         w_zip = rec.w_zip;
+         w_ytd = rec.w_ytd;
       });
 
       warehouse.update1(
@@ -664,13 +664,13 @@ class TPCCWorkload
       Varchar<9> d_zip;
       Numeric d_ytd;
       district.lookup1({w_id, d_id}, [&](const district_t& rec) {
-        d_name = rec.d_name;
-        d_street_1 = rec.d_street_1;
-        d_street_2 = rec.d_street_2;
-        d_city = rec.d_city;
-        d_state = rec.d_state;
-        d_zip = rec.d_zip;
-        d_ytd = rec.d_ytd;
+         d_name = rec.d_name;
+         d_street_1 = rec.d_street_1;
+         d_street_2 = rec.d_street_2;
+         d_city = rec.d_city;
+         d_state = rec.d_state;
+         d_zip = rec.d_zip;
+         d_ytd = rec.d_ytd;
       });
       district.update1(
           {w_id, d_id}, [&](district_t& rec) { rec.d_ytd += h_amount; });
@@ -680,11 +680,11 @@ class TPCCWorkload
       customerwdl.scan(
           {c_w_id, c_d_id, c_last, {}},
           [&](const customer_wdl_t::Key& key, const customer_wdl_t& rec) {
-            if (key.c_w_id == c_w_id && key.c_d_id == c_d_id && key.c_last == c_last) {
-               ids.push_back(rec.c_id);
-               return true;
-            }
-            return false;
+             if (key.c_w_id == c_w_id && key.c_d_id == c_d_id && key.c_last == c_last) {
+                ids.push_back(rec.c_id);
+                return true;
+             }
+             return false;
           },
           [&]() { ids.clear(); });
       unsigned c_count = ids.size();
@@ -701,11 +701,11 @@ class TPCCWorkload
       Numeric c_ytd_payment;
       Numeric c_payment_cnt;
       customer.lookup1({c_w_id, c_d_id, c_id}, [&](const customer_t& rec) {
-        c_data = rec.c_data;
-        c_credit = rec.c_credit;
-        c_balance = rec.c_balance;
-        c_ytd_payment = rec.c_ytd_payment;
-        c_payment_cnt = rec.c_payment_cnt;
+         c_data = rec.c_data;
+         c_credit = rec.c_credit;
+         c_balance = rec.c_balance;
+         c_ytd_payment = rec.c_ytd_payment;
+         c_payment_cnt = rec.c_payment_cnt;
       });
       Numeric c_new_balance = c_balance - h_amount;
       Numeric c_new_ytd_payment = c_ytd_payment + h_amount;
@@ -747,7 +747,7 @@ class TPCCWorkload
       Integer d_id = urand(1, 10);
       Integer c_w_id = w_id;
       Integer c_d_id = d_id;
-      if (urand(1, 100) > 85) {
+      if (cross_warehouses && urand(1, 100) > 85) {  // ATTN: cross warehouses
          c_w_id = urandexcept(1, warehouseCount, w_id);
          c_d_id = urand(1, 10);
       }
@@ -759,18 +759,6 @@ class TPCCWorkload
       } else {
          paymentById(w_id, d_id, c_w_id, c_d_id, getCustomerID(), h_date, h_amount, currentTimestamp());
       }
-   }
-   // -------------------------------------------------------------------------------------
-   void analyticalQuery()
-   {
-      Integer sum = 0;
-      stock.scan(
-          {1, 0},
-          [&](const stock_t::Key&, const stock_t& rec) {
-            sum += rec.s_order_cnt;
-            return true;
-          },
-          [&]() {});
    }
    // -------------------------------------------------------------------------------------
   public:
@@ -788,7 +776,7 @@ class TPCCWorkload
                 bool order_wdc_index,
                 Integer warehouse_count,
                 bool tpcc_remove,
-                bool analytical = 0)
+                bool cross_warehouses = true)
        : warehouse(w),
          district(d),
          customer(customer),
@@ -803,7 +791,7 @@ class TPCCWorkload
          order_wdc_index(order_wdc_index),
          warehouseCount(warehouse_count),
          tpcc_remove(tpcc_remove),
-         analytical_query_pct(analytical)
+         cross_warehouses(cross_warehouses)
    {
    }
    // -------------------------------------------------------------------------------------
@@ -821,8 +809,8 @@ class TPCCWorkload
       history.scanDesc(
           {t_id, std::numeric_limits<Integer>::max()},
           [&](const history_t::Key& key, const history_t&) {
-            h_id = key.h_pk + 1;
-            return false;
+             h_id = key.h_pk + 1;
+             return false;
           },
           []() {});
       leanstore::WorkerCounters::myCounters().variable_for_workload = h_id;
@@ -927,10 +915,6 @@ class TPCCWorkload
    {
       // micro-optimized version of weighted distribution
       u64 rnd = leanstore::utils::RandomGenerator::getRand(0, 10000);
-      if (rnd < analytical_query_pct) {
-         analyticalQuery();
-         return 5;
-      }
       if (rnd < 4300) {
          paymentRnd(w_id);
          return 0;
@@ -953,5 +937,30 @@ class TPCCWorkload
       rnd -= 400;
       newOrderRnd(w_id);
       return 4;
+   }
+   // -------------------------------------------------------------------------------------
+   void analyticalQuery()
+   {
+      if (0) {
+         Integer sum = 0, last_w = 0, last_i = 0;
+         stock.scan(
+             {1, 0},
+             [&](const stock_t::Key& key, const stock_t&) {
+                sum++;
+                ensure(key.s_w_id >= last_w);
+                last_w = key.s_w_id;
+                last_i = key.s_i_id;
+                return true;
+             },
+             [&]() {});
+         if (sum != warehouseCount * 100000) {
+            cout << "#stocks = " << sum << endl;
+            cout << last_w << "," << last_i << endl;
+            ensure(false);
+         }
+      } else {
+         district.scan(
+             {1, 0}, [&](const district_t::Key& key, const district_t&) { return true; }, [&]() {});
+      }
    }
 };

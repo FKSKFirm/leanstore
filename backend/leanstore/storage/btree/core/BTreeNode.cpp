@@ -60,12 +60,12 @@ bool BTreeNode::prepareInsert(u16 key_len, u16 payload_len)
       return true;
 }
 // -------------------------------------------------------------------------------------
-s16 BTreeNode::insertDoNotCopyPayload(const u8* key, u16 key_len, u16 payload_length)
+s16 BTreeNode::insertDoNotCopyPayload(const u8* key, u16 key_len, u16 payload_length, s32 pos)
 {
    assert(canInsert(key_len, payload_length));
    prepareInsert(key_len, payload_length);
    // -------------------------------------------------------------------------------------
-   s32 slotId = lowerBound<false>(key, key_len);
+   s32 slotId = (pos == -1) ? lowerBound<false>(key, key_len) : pos;
    memmove(slot + slotId + 1, slot + slotId, sizeof(Slot) * (count - slotId));
    // -------------------------------------------------------------------------------------
    // StoreKeyValue
@@ -96,10 +96,7 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    {
       assert(canInsert(key_len, payload_length));
       s32 exact_pos = lowerBound<true>(key, key_len);
-      //static_cast<void>(exact_pos);
-      if(exact_pos != -1) {
-         exact_pos = lowerBound<true>(key, key_len);
-      }
+      static_cast<void>(exact_pos);
       assert(exact_pos == -1);  // assert for duplicates
    }
    // -------------------------------------------------------------------------------------
@@ -109,7 +106,6 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    storeKeyValueWithDeletionMarker(slotId, key, key_len, payload, payload_length, deletionMarker);
    count++;
    updateHint(slotId);
-
    return slotId;
    // -------------------------------------------------------------------------------------
    DEBUG_BLOCK()
@@ -141,7 +137,7 @@ void BTreeNode::compactify()
    tmp.upper = upper;
    memcpy(reinterpret_cast<char*>(this), &tmp, sizeof(BTreeNode));
    makeHint();
-   assert(freeSpace() == should);
+   assert(freeSpace() == should);  // TODO: why should ??
 }
 // -------------------------------------------------------------------------------------
 u32 BTreeNode::mergeSpaceUpperBound(ExclusivePageGuard<BTreeNode>& right)
@@ -420,7 +416,7 @@ Swip<BTreeNode>& BTreeNode::lookupInner(const u8* key, u16 keyLength)
 void BTreeNode::split(ExclusivePageGuard<BTreeNode>& parent, ExclusivePageGuard<BTreeNode>& nodeLeft, u16 sepSlot, u8* sepKey, u16 sepLength)
 {
    // PRE: current, parent and nodeLeft are x locked
-   assert(sepSlot > 0);
+   // assert(sepSlot > 0); TODO: really ?
    assert(sepSlot < (EFFECTIVE_PAGE_SIZE / sizeof(SwipType)));
    // -------------------------------------------------------------------------------------
    nodeLeft->setFences(getLowerFenceKey(), lower_fence.length, sepKey, sepLength);

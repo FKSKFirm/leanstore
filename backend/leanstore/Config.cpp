@@ -61,12 +61,6 @@ DEFINE_string(tag, "", "Unique identifier for this, will be appended to each lin
 // -------------------------------------------------------------------------------------
 DEFINE_bool(out_of_place, false, "");
 // -------------------------------------------------------------------------------------
-DEFINE_bool(si, false, "Snapshot Isolation");
-DEFINE_uint64(si_refresh_rate, 0, "");
-DEFINE_bool(vw, false, "BTree with SI using versions in WAL");
-DEFINE_bool(vw_todo, false, "");
-DEFINE_bool(vi, false, "BTree with SI using in-place version");
-// -------------------------------------------------------------------------------------
 DEFINE_bool(persist, false, "");
 DEFINE_uint64(tmp, 0, "");
 // -------------------------------------------------------------------------------------

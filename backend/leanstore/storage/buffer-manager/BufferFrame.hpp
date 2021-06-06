@@ -14,7 +14,6 @@ namespace storage
 {
 // -------------------------------------------------------------------------------------
 const u64 PAGE_SIZE = 16 * 1024;
-//const u64 PAGE_SIZE = 512;
 // -------------------------------------------------------------------------------------
 struct BufferFrame {
    enum class STATE : u8 { FREE = 0, HOT = 1, COOL = 2, LOADED = 3 };
@@ -61,7 +60,7 @@ struct BufferFrame {
    // -------------------------------------------------------------------------------------
    inline bool isDirty() const { return header.lastWrittenGSN != page.GSN; }
    // -------------------------------------------------------------------------------------
-   // Pre: getBufferFrame is exclusively locked
+   // Pre: bf is exclusively locked
    void reset()
    {
       header.debug = header.pid;
@@ -74,6 +73,7 @@ struct BufferFrame {
       header.pid = 9999;
       header.next_free_bf = nullptr;
       header.contention_tracker.reset();
+      header.keep_in_memory = false;
       // std::memset(reinterpret_cast<u8*>(&page), 0, PAGE_SIZE);
    }
    // -------------------------------------------------------------------------------------

@@ -26,7 +26,7 @@ void BloomFilter::generateNewBloomFilterLevel(BloomFilter::Page* page, uint64_t 
       uint64_t pageCountOnNextLevel = ceil(pagesToInsert / (double)sizeOfFittingPtr);
       if (pageCountOnNextLevel > 1) {
          // further level required
-         for (int i = 0; i < sizeOfFittingPtr; i++) {
+         for (unsigned i = 0; i < sizeOfFittingPtr; i++) {
             // generate new non-leaf-level
             Page* newPage = new Page();
             newPage->isLeaf = false;
@@ -36,7 +36,7 @@ void BloomFilter::generateNewBloomFilterLevel(BloomFilter::Page* page, uint64_t 
          pageLevels++;
          return;
       } else {
-         for (int i = 0; i < pagesToInsert; i++) {
+         for (unsigned i = 0; i < pagesToInsert; i++) {
             // leaf level
             Page* newPage = new Page();
             newPage->isLeaf = true;
@@ -75,9 +75,9 @@ void BloomFilter::init(uint64_t n)
 void BloomFilter::insert(uint64_t h)
 {
    // pagesBits are the highest n Bits, identifying the page with wordMask x uint64_t
-   int pageNumber = h >> (64 - pagesBits);
+   unsigned pageNumber = h >> (64 - pagesBits);
    Page* currentPage = rootBloomFilterPage;
-   int currentPageLevel = pageLevels;
+   unsigned currentPageLevel = pageLevels;
    while (!currentPage->isLeaf) {
       uint64_t numberOfEntriesBelowNodePerChild =
           1;  // if root node has between 2...512 children, these children are payload nodes, so per child one entry page
@@ -86,19 +86,18 @@ void BloomFilter::insert(uint64_t h)
          numberOfEntriesBelowNodePerChild = pagesLowestLevel;
       }
 
-      for (int i = currentPageLevel; i > 3; i--) {
+      for (unsigned i = currentPageLevel; i > 3; i--) {
          // for each extra level of 512 child pointers
          numberOfEntriesBelowNodePerChild *= sizeOfFittingPtr;
       }
 
-      int positionOfNextChildNode = 0;
+      unsigned positionOfNextChildNode = 0;
       while (pageNumber >= (positionOfNextChildNode + 1) * numberOfEntriesBelowNodePerChild) {
          positionOfNextChildNode++;
       }
 
       pageNumber -= positionOfNextChildNode * numberOfEntriesBelowNodePerChild;
       currentPageLevel--;
-      assert(positionOfNextChildNode >= 0);
       assert(positionOfNextChildNode < (btree::btreePageSize / sizeof(Page*)));
       currentPage = currentPage->pointerToChilds[positionOfNextChildNode];
    }
@@ -161,9 +160,9 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
             currentPage = currentPage->pointerToChilds[positionOfNextChildNode-1];
          }
    */
-   int pageNumber = h >> (64 - pagesBits);
+   unsigned pageNumber = h >> (64 - pagesBits);
    Page* currentPage = rootBloomFilterPage;
-   int currentPageLevel = pageLevels;
+   unsigned currentPageLevel = pageLevels;
    while (!currentPage->isLeaf) {
       uint64_t numberOfEntriesBelowNodePerChild =
           1;  // if root node has between 2...512 children, these children are payload nodes, so per child one entry page
@@ -172,7 +171,7 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
          numberOfEntriesBelowNodePerChild = pagesLowestLevel;
       }
 
-      for (int i = currentPageLevel; i > 3; i--) {
+      for (unsigned i = currentPageLevel; i > 3; i--) {
          // for each extra level of 512 child pointers
          numberOfEntriesBelowNodePerChild *= sizeOfFittingPtr;
       }
@@ -186,8 +185,6 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
       currentPageLevel--;
       currentPage = currentPage->pointerToChilds[positionOfNextChildNode];
    }
-
-   Page& p = pages[pageNumber];
 
    uint64_t searchMask = 0;
    searchMask |= 1ull << ((h >> 0) & 63);

@@ -97,11 +97,6 @@ BufferManager::BufferManager(s32 ssd_fd) : ssd_fd(ssd_fd)
    }
 }
 // -------------------------------------------------------------------------------------
-void BufferManager::clearSSD()
-{
-   // TODO
-}
-// -------------------------------------------------------------------------------------
 void BufferManager::writeAllBufferFrames()
 {
    stopBackgroundThreads();
@@ -115,11 +110,6 @@ void BufferManager::writeAllBufferFrames()
          bf.header.latch.mutex.unlock();
       }
    });
-}
-// -------------------------------------------------------------------------------------
-void BufferManager::restore()
-{
-   // TODO
 }
 // -------------------------------------------------------------------------------------
 u64 BufferManager::consumedPages()
@@ -151,18 +141,11 @@ BufferFrame& BufferManager::randomBufferFrame()
    auto rand_buffer_i = utils::RandomGenerator::getRand<u64>(0, dram_pool_size);
    return bfs[rand_buffer_i];
 }
-int pageAllocations = 0;
-int pagesInUse = 0;
-int pageFrees = 0;
 // -------------------------------------------------------------------------------------
 // returns a *write locked* new buffer frame
 BufferFrame& BufferManager::allocatePage()
 {
-   pageAllocations++;
-   pagesInUse++;
-   //if (pagesInUse>4910)
-     // cout << "Pages in use: " << pagesInUse << endl;
-   // Pick a pratition randomly
+   // Pick a partition randomly
    Partition& partition = randomPartition();
    BufferFrame& free_bf = partition.dram_free_list.pop();
    PID free_pid = partition.nextPID();
@@ -179,9 +162,6 @@ BufferFrame& BufferManager::allocatePage()
    if (free_pid == dram_pool_size) {
       cout << "-------------------------------------------------------------------------------------" << endl;
       cout << "Going out of memory !" << endl;
-      //cout << "Pages allocated: " << pageAllocations << endl;
-      //cout << "Pages in use: " << pagesInUse << endl;
-      //cout << "Pages freed: " << pageFrees << endl;
       cout << "-------------------------------------------------------------------------------------" << endl;
    }
    free_bf.header.latch.assertExclusivelyLatched();
@@ -191,13 +171,11 @@ BufferFrame& BufferManager::allocatePage()
    return free_bf;
 }
 // -------------------------------------------------------------------------------------
-// Pre: getBufferFrame is exclusively locked
+// Pre: bf is exclusively locked
 // ATTENTION: this function unlocks it !!
 // -------------------------------------------------------------------------------------
 void BufferManager::reclaimPage(BufferFrame& bf)
 {
-   pagesInUse--;
-   pageFrees++;
    Partition& partition = getPartition(bf.header.pid);
    partition.freePage(bf.header.pid);
    bf.header.keep_in_memory = false;
@@ -220,18 +198,18 @@ void BufferManager::reclaimPage(BufferFrame& bf)
 BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& swip_value)
 {
    if (swip_value.isHOT()) {
-      BufferFrame& bf = swip_value.bfRef();
+      BufferFrame& bf = swip_value.asBufferFrame();
       swip_guard.recheck();
       return bf;
    } else if (swip_value.isCOOL()) {
-      BufferFrame* bf = swip_value.bfPtrAsHot();
+      BufferFrame* bf = &swip_value.asBufferFrameMasked();
       swip_guard.recheck();
       OptimisticGuard bf_guard(bf->header.latch, true);
       ExclusiveUpgradeIfNeeded swip_x_guard(swip_guard);  // parent
       ExclusiveGuard bf_x_guard(bf_guard);                // child
       bf->header.state = BufferFrame::STATE::HOT;
       swip_value.warm();
-      return swip_value.bfRef();
+      return swip_value.asBufferFrame();
    }
    // -------------------------------------------------------------------------------------
    swip_guard.unlock();  // otherwise we would get a deadlock, P->G, G->P
@@ -257,7 +235,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       readPageSync(pid, bf.page);
       COUNTERS_BLOCK()
       {
-        // WorkerCounters::myCounters().dt_misses_counter[getBufferFrame.page.dt_id]++;
+         // WorkerCounters::myCounters().dt_misses_counter[bf.page.dt_id]++;
          if (FLAGS_trace_dt_id >= 0 && bf.page.dt_id == FLAGS_trace_dt_id &&
              utils::RandomGenerator::getRand<u64>(0, FLAGS_trace_trigger_probability) == 0) {
             utils::printBackTrace();
@@ -322,7 +300,7 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       // -------------------------------------------------------------------------------------
       BufferFrame* bf = io_frame.bf;
       {
-         // We have to exclusively lock the getBufferFrame because the page provider thread will
+         // We have to exclusively lock the bf because the page provider thread will
          // try to evict them when its IO is done
          bf->header.latch.assertNotExclusivelyLatched();
          assert(bf->header.state == BufferFrame::STATE::LOADED);

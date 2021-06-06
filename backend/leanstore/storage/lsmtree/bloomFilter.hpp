@@ -8,8 +8,8 @@
 #include "MurmurHash3.h"
 
 #include "leanstore/Config.hpp"
+#include "leanstore/KVInterface.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
-#include "leanstore/storage/KeyValueInterface.hpp"
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/sync-primitives/PageGuard.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
@@ -37,7 +37,6 @@ struct BloomFilter : public DataStructureIdentifier {
    // TODO: set correct PageSize: (static constexpr u64 EFFECTIVE_PAGE_SIZE = sizeof(BufferFrame::Page::dt);)
    // TODO: Tree-structure for LeanStore
    struct Page {
-      Page(Page* pPage) { memset(word, 0, sizeof(word)); }
       bool isLeaf;
       union {
          uint64_t word[(btree::btreePageSize / sizeof(uint64_t))];
@@ -56,6 +55,7 @@ struct BloomFilter : public DataStructureIdentifier {
    static const uint64_t sizeOfFittingPtr = sizeof(rootBloomFilterPage->pointerToChilds) / sizeof(Page*);
 
    BloomFilter();
+   ~BloomFilter() { pages.clear(); };
 
    void init(uint64_t n);
 

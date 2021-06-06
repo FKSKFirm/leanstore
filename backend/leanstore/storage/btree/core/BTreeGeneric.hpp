@@ -2,8 +2,8 @@
 #include "BTreeIteratorInterface.hpp"
 #include "BTreeNode.hpp"
 #include "leanstore/Config.hpp"
+#include "leanstore/KVInterface.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
-#include "leanstore/storage/KeyValueInterface.hpp"
 #include "leanstore/storage/buffer-manager/BufferManager.hpp"
 #include "leanstore/sync-primitives/PageGuard.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
@@ -57,7 +57,6 @@ class BTreeGeneric
    inline void findLeafCanJump(HybridPageGuard<BTreeNode>& target_guard, const u8* key, const u16 key_length)
    {
       target_guard.unlock();
-      // get the meta node
       HybridPageGuard<BTreeNode> p_guard(meta_node_bf);
       // p_guard->upper is root, target_guard set to the root node
       target_guard = HybridPageGuard<BTreeNode>(p_guard, p_guard->upper);
@@ -66,7 +65,7 @@ class BTreeGeneric
       // -------------------------------------------------------------------------------------
       // search for the leaf node
       while (!target_guard->is_leaf) {
-         // search in current node (target_guard) to correct link to child
+         WorkerCounters::myCounters().dt_inner_page[dt_id]++;
          Swip<BTreeNode>& c_swip = target_guard->lookupInner(key, key_length);
          p_guard = std::move(target_guard);
          if (level == height - 1) {
@@ -101,8 +100,8 @@ class BTreeGeneric
    // -------------------------------------------------------------------------------------
    // Helpers
    // -------------------------------------------------------------------------------------
-   inline bool isMetaNode(HybridPageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bufferFrame; }
-   inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard) { return meta_node_bf == guard.getBufferFrame(); }
+   inline bool isMetaNode(HybridPageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bf; }
+   inline bool isMetaNode(ExclusivePageGuard<BTreeNode>& guard) { return meta_node_bf == guard.bf(); }
    s64 iterateAllPages(std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
    s64 iterateAllPagesRec(HybridPageGuard<BTreeNode>& node_guard, std::function<s64(BTreeNode&)> inner, std::function<s64(BTreeNode&)> leaf);
    u64 countInner();

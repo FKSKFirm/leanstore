@@ -1,6 +1,7 @@
 #include "CRMG.hpp"
 
 #include "leanstore/profiling/counters/CPUCounters.hpp"
+#include "leanstore/profiling/counters/WorkerCounters.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <mutex>
@@ -10,9 +11,9 @@ namespace leanstore
 namespace cr
 {
 // -------------------------------------------------------------------------------------
-WorkerThreadManager* WorkerThreadManager::global = nullptr;
+CRManager* CRManager::global = nullptr;
 // -------------------------------------------------------------------------------------
-WorkerThreadManager::WorkerThreadManager()
+CRManager::CRManager(s32 ssd_fd, u64 end_of_block_device) : ssd_fd(ssd_fd), end_of_block_device(end_of_block_device)
 {
    workers_count = FLAGS_worker_threads;
    ensure(workers_count < MAX_WORKER_THREADS);
@@ -22,12 +23,15 @@ WorkerThreadManager::WorkerThreadManager()
          std::string thread_name("worker_" + std::to_string(t_i));
          pthread_setname_np(pthread_self(), thread_name.c_str());
          // -------------------------------------------------------------------------------------
+         WorkerCounters::myCounters().worker_id = t_i;
          CPUCounters::registerThread(thread_name, false);
          // -------------------------------------------------------------------------------------
-         workers[t_i] = new Worker(t_i, workers, workers_count);
+         workers[t_i] = new Worker(t_i, workers, workers_count, ssd_fd);
          Worker::tls_ptr = workers[t_i];
          // -------------------------------------------------------------------------------------
          running_threads++;
+         while (running_threads != (FLAGS_worker_threads))
+            ;
          auto& meta = worker_threads_meta[t_i];
          while (keep_running) {
             std::unique_lock guard(meta.mutex);
@@ -55,7 +59,7 @@ WorkerThreadManager::WorkerThreadManager()
    // -------------------------------------------------------------------------------------
 }
 // -------------------------------------------------------------------------------------
-WorkerThreadManager::~WorkerThreadManager()
+CRManager::~CRManager()
 {
    keep_running = false;
 
@@ -69,7 +73,7 @@ WorkerThreadManager::~WorkerThreadManager()
    }
 }
 // -------------------------------------------------------------------------------------
-void WorkerThreadManager::scheduleJobSync(u64 t_i, std::function<void()> job)
+void CRManager::scheduleJobSync(u64 t_i, std::function<void()> job)
 {
    ensure(t_i < workers_count);
    auto& meta = worker_threads_meta[t_i];
@@ -84,7 +88,7 @@ void WorkerThreadManager::scheduleJobSync(u64 t_i, std::function<void()> job)
    meta.cv.wait(guard, [&]() { return meta.job_done; });
 }
 // -------------------------------------------------------------------------------------
-void WorkerThreadManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
+void CRManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
 {
    ensure(t_i < workers_count);
    auto& meta = worker_threads_meta[t_i];
@@ -97,7 +101,7 @@ void WorkerThreadManager::scheduleJobAsync(u64 t_i, std::function<void()> job)
    meta.cv.notify_one();
 }
 // -------------------------------------------------------------------------------------
-void WorkerThreadManager::joinAll()
+void CRManager::joinAll()
 {
    for (u32 t_i = 0; t_i < workers_count; t_i++) {
       auto& meta = worker_threads_meta[t_i];

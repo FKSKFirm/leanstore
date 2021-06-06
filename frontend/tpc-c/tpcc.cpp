@@ -1,4 +1,6 @@
-#include "adapter.hpp"
+#include "LeanStoreAdapter.hpp"
+#include "Schema.hpp"
+#include "Types.hpp"
 #include "leanstore/concurrency-recovery/CRMG.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"
 #include "leanstore/profiling/counters/WorkerCounters.hpp"
@@ -6,8 +8,6 @@
 #include "leanstore/utils/Parallelize.hpp"
 #include "leanstore/utils/RandomGenerator.hpp"
 #include "leanstore/utils/ZipfGenerator.hpp"
-#include "schema.hpp"
-#include "types.hpp"
 // -------------------------------------------------------------------------------------
 #include <gflags/gflags.h>
 
@@ -109,9 +109,7 @@ int main(int argc, char** argv)
 
 
    /* ********************* Own Test end ******************/
-
-   // TODO: For one big LSM Tree change registration of adapters (register in same DB)
-
+   
    // -------------------------------------------------------------------------------------
    warehouseCount = FLAGS_tpcc_warehouse_count;
       warehouse = LeanStoreAdapter<warehouse_t>(db, "warehouse",0);
@@ -225,9 +223,5 @@ int main(int argc, char** argv)
    // -------------------------------------------------------------------------------------
    gib = (db.getBufferManager().consumedPages() * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0 / 1024.0);
    cout << endl << "consumed space in GiB = " << gib << endl;
-   // -------------------------------------------------------------------------------------
-   if (FLAGS_persist) {
-      db.getBufferManager().writeAllBufferFrames();
-   }
    return 0;
 }

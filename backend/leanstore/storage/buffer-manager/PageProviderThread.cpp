@@ -30,7 +30,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
    using Time = decltype(std::chrono::high_resolution_clock::now());
    // -------------------------------------------------------------------------------------
    // TODO: register as special worker
-   cr::Worker::tls_ptr = new cr::Worker(0, nullptr, 0);
+   cr::Worker::tls_ptr = new cr::Worker(0, nullptr, 0, ssd_fd);
    // -------------------------------------------------------------------------------------
    // Init AIO Context
    AsyncWriteBuffer async_write_buffer(ssd_fd, PAGE_SIZE, FLAGS_async_batch_size);
@@ -45,7 +45,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
       // -------------------------------------------------------------------------------------
       [[maybe_unused]] Time phase_1_begin, phase_1_end;
       COUNTERS_BLOCK() { phase_1_begin = std::chrono::high_resolution_clock::now(); }
-      BufferFrame* volatile r_buffer = &randomBufferFrame();  // Attention: we may set the r_buffer to a child of a getBufferFrame instead of random
+      BufferFrame* volatile r_buffer = &randomBufferFrame();  // Attention: we may set the r_buffer to a child of a bf instead of random
       volatile u64 failed_attempts =
           0;  // [corner cases]: prevent starving when free list is empty and cooling to the required level can not be achieved
 #define repickIf(cond)                 \
@@ -78,7 +78,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
                getDTRegistry().iterateChildrenSwips(r_buffer->page.dt_id, *r_buffer, [&](Swip<BufferFrame>& swip) {
                   all_children_evicted &= swip.isEVICTED();  // ignore when it has a child in the cooling stage
                   if (swip.isHOT()) {
-                     r_buffer = &swip.bfRef();
+                     r_buffer = &swip.asBufferFrame();
                      r_guard.recheck();
                      picked_a_child_instead = true;
                      return false;

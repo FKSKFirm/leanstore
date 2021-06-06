@@ -16,6 +16,8 @@ struct WorkerCounters {
    // -------------------------------------------------------------------------------------
    atomic<u64> t_id = 9999;                // used by tpcc
    atomic<u64> variable_for_workload = 0;  // Used by tpcc
+                                           // -------------------------------------------------------------------------------------
+   atomic<u64> worker_id = -1;
    // -------------------------------------------------------------------------------------
    atomic<u64> hot_hit_counter = 0;  // TODO: give it a try ?
    atomic<u64> cold_hit_counter = 0;
@@ -29,8 +31,10 @@ struct WorkerCounters {
    // Space and contention management
    atomic<u64> contention_split_succ_counter[max_dt_id] = {0};
    atomic<u64> contention_split_fail_counter[max_dt_id] = {0};
-   atomic<u64> cm_merge_succ_counter[max_dt_id] = {0};
-   atomic<u64> cm_merge_fail_counter[max_dt_id] = {0};
+   atomic<u64> dt_merge_succ[max_dt_id] = {0};
+   atomic<u64> dt_merge_parent_succ[max_dt_id] = {0};
+   atomic<u64> dt_merge_fail[max_dt_id] = {0};
+   atomic<u64> dt_merge_parent_fail[max_dt_id] = {0};
    atomic<u64> xmerge_partial_counter[max_dt_id] = {0};
    atomic<u64> xmerge_full_counter[max_dt_id] = {0};
    // -------------------------------------------------------------------------------------
@@ -40,9 +44,13 @@ struct WorkerCounters {
    atomic<u64> dt_restarts_read[max_dt_id] = {0};
    atomic<u64> dt_researchy[max_dt_id][max_researchy_counter] = {};  // temporary counter used to track some value for an idea in my mind
    // -------------------------------------------------------------------------------------
-  constexpr static u64 VW_MAX_STEPS = 10;
-   atomic<u64> vw_version_step[max_dt_id][VW_MAX_STEPS] = {0};
-   // ------------------------------------------------------------------------------------  // -------------------------------------------------------------------------------------
+   atomic<u64> dt_skipped_leaf[max_dt_id] = {0};
+   atomic<u64> dt_empty_leaf[max_dt_id] = {0};
+   atomic<u64> dt_goto_page[max_dt_id] = {0};
+   atomic<u64> dt_next_tuple[max_dt_id] = {0};
+   atomic<u64> dt_prev_tuple[max_dt_id] = {0};
+   atomic<u64> dt_inner_page[max_dt_id] = {0};
+   // -------------------------------------------------------------------------------------
    WorkerCounters() { t_id = workers_counter++; }
    // -------------------------------------------------------------------------------------
    static atomic<u64> workers_counter;

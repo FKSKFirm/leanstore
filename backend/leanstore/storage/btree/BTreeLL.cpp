@@ -27,7 +27,7 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
          HybridPageGuard<BTreeNode> leaf;
          findLeafCanJump(leaf, key, key_length);
          // -------------------------------------------------------------------------------------
-         /*DEBUG_BLOCK()
+         DEBUG_BLOCK()
          {
             s16 sanity_check_result = leaf->compareKeyWithBoundaries(key, key_length);
             leaf.recheck();
@@ -35,7 +35,7 @@ OP_RESULT BTreeLL::lookup(u8* key, u16 key_length, function<void(const u8*, u16)
                cout << leaf->count << endl;
             }
             ensure(sanity_check_result == 0);
-         }*/
+         }
          // -------------------------------------------------------------------------------------
          s16 pos = leaf->lowerBound<true>(key, key_length);
          if (pos != -1) {
@@ -71,7 +71,7 @@ OP_RESULT BTreeLL::scanAsc(u8* start_key,
    jumpmuTry()
    {
       BTreeSharedIterator iterator(*static_cast<BTreeGeneric*>(this));
-      auto ret = iterator.seek(key);
+      OP_RESULT ret = iterator.seek(key);
       if (ret != OP_RESULT::OK) {
          jumpmu_return ret;
       }
@@ -87,12 +87,12 @@ OP_RESULT BTreeLL::scanAsc(u8* start_key,
          }
       }
    }
-   jumpmuCatch() { ensure(false); }
+   jumpmuCatch() { return OP_RESULT::OTHER; }
 }
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(const u8*, u16, const u8*, u16)> callback)
 {
-   Slice key(start_key, key_length);
+   const Slice key(start_key, key_length);
    jumpmuTry()
    {
       BTreeSharedIterator iterator(*static_cast<BTreeGeneric*>(this));
@@ -112,7 +112,7 @@ OP_RESULT BTreeLL::scanDesc(u8* start_key, u16 key_length, std::function<bool(co
          }
       }
    }
-   jumpmuCatch() { ensure(false); }
+   jumpmuCatch() { return OP_RESULT::OTHER; }
 }
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_length)
@@ -122,8 +122,8 @@ OP_RESULT BTreeLL::insert(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::insertWithDeletionMarker(u8* o_key, u16 o_key_length, u8* o_value, u16 o_value_length, bool deletionMarker)
 {
-   Slice key(o_key, o_key_length);
-   Slice value(o_value, o_value_length);
+   const Slice key(o_key, o_key_length);
+   const Slice value(o_value, o_value_length);
    jumpmuTry()
    {
       BTreeExclusiveIterator iterator(*static_cast<BTreeGeneric*>(this));
@@ -132,10 +132,10 @@ OP_RESULT BTreeLL::insertWithDeletionMarker(u8* o_key, u16 o_key_length, u8* o_v
       iterator.leaf.incrementGSN();
       jumpmu_return OP_RESULT::OK;
    }
-   jumpmuCatch() { ensure(false); }
+   jumpmuCatch() { return OP_RESULT::OTHER; }
 }
 // -------------------------------------------------------------------------------------
-OP_RESULT BTreeLL::updateSameSize(u8* o_key,
+OP_RESULT BTreeLL::updateSameSizeInPlace(u8* o_key,
                                   u16 o_key_length,
                                   function<void(u8* payload, u16 payload_size)> callback)
 {
@@ -153,12 +153,12 @@ OP_RESULT BTreeLL::updateSameSize(u8* o_key,
       iterator.contentionSplit();
       jumpmu_return OP_RESULT::OK;
    }
-   jumpmuCatch() { ensure(false); }
+   jumpmuCatch() { return OP_RESULT::OTHER; }
 }
 // -------------------------------------------------------------------------------------
 OP_RESULT BTreeLL::remove(u8* o_key, u16 o_key_length)
 {
-   Slice key(o_key, o_key_length);
+   const Slice key(o_key, o_key_length);
    jumpmuTry()
    {
       BTreeExclusiveIterator iterator(*static_cast<BTreeGeneric*>(this));
@@ -212,9 +212,9 @@ u64 BTreeLL::getHeight()
    return BTreeGeneric::getHeight();
 }
 // -------------------------------------------------------------------------------------
-struct DataTypeRegistry::DTMeta BTreeLL::getMeta()
+struct DTRegistry::DTMeta BTreeLL::getMeta()
 {
-   DataTypeRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
+   DTRegistry::DTMeta btree_meta = {.iterate_children = iterateChildrenSwips,
                                     .find_parent = findParent,
                                     .check_space_utilization = checkSpaceUtilization};
    return btree_meta;

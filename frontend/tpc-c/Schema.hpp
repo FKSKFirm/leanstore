@@ -1,3 +1,8 @@
+#pragma once
+#include "Types.hpp"
+// -------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------
 /* ***************** Own Test begin ************************** */
 #define test_t_size 100
 struct test_t {
@@ -9,14 +14,14 @@ struct test_t {
    Varchar<test_t_size> t_text;
    // -------------------------------------------------------------------------------------
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.w_id);
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.w_id);
@@ -43,14 +48,14 @@ struct warehouse_t {
    Numeric w_ytd;
    // -------------------------------------------------------------------------------------
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.w_id);
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.w_id);
@@ -77,7 +82,7 @@ struct district_t {
    Integer d_next_o_id;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.d_w_id);
@@ -85,7 +90,7 @@ struct district_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.d_w_id);
@@ -123,7 +128,7 @@ struct customer_t {
    Varchar<500> c_data;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.c_w_id);
@@ -132,7 +137,7 @@ struct customer_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.c_w_id);
@@ -155,7 +160,7 @@ struct customer_wdl_t {
    Integer c_id;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.c_w_id);
@@ -165,7 +170,7 @@ struct customer_wdl_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.c_w_id);
@@ -194,7 +199,7 @@ struct history_t {
    Varchar<24> h_data;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.thread_id);
@@ -202,7 +207,7 @@ struct history_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.h_pk);
@@ -221,7 +226,7 @@ struct neworder_t {
    };
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.no_w_id);
@@ -230,7 +235,7 @@ struct neworder_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.no_w_id);
@@ -256,7 +261,7 @@ struct order_t {
    Numeric o_all_local;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.o_w_id);
@@ -265,7 +270,7 @@ struct order_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.o_w_id);
@@ -287,7 +292,7 @@ struct order_wdc_t {
    };
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.o_w_id);
@@ -297,7 +302,7 @@ struct order_wdc_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.o_w_id);
@@ -326,7 +331,7 @@ struct orderline_t {
    Varchar<24> ol_dist_info;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.ol_w_id);
@@ -336,7 +341,7 @@ struct orderline_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.ol_w_id);
@@ -363,14 +368,14 @@ struct item_t {
    Varchar<50> i_data;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.i_id);
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.i_id);
@@ -403,7 +408,7 @@ struct stock_t {
    Varchar<50> s_data;
 
    template <class T>
-   static unsigned foldRecord(uint8_t* out, const T& record)
+   static unsigned foldKey(uint8_t* out, const T& record)
    {
       unsigned pos = 0;
       pos += fold(out + pos, record.s_w_id);
@@ -411,7 +416,7 @@ struct stock_t {
       return pos;
    }
    template <class T>
-   static unsigned unfoldRecord(const uint8_t* in, T& record)
+   static unsigned unfoldKey(const uint8_t* in, T& record)
    {
       unsigned pos = 0;
       pos += unfold(in + pos, record.s_w_id);

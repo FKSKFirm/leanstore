@@ -2,7 +2,7 @@
 #include "Exceptions.hpp"
 #include "Units.hpp"
 #include "leanstore/storage/buffer-manager/BufferFrame.hpp"
-#include "leanstore/storage/buffer-manager/DataTypeRegistry.hpp"
+#include "leanstore/storage/buffer-manager/DTRegistry.hpp"
 #include "leanstore/sync-primitives/PageGuard.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
@@ -70,7 +70,9 @@ struct BTreeNodeHeader : public DataStructureIdentifier {
 
    static const u16 hint_count = 16;
    u32 hint[hint_count];
-
+   // -------------------------------------------------------------------------------------
+   u8 meta_box[64];  // Btree variants can cast and use this 64-bytes as they wish
+   // -------------------------------------------------------------------------------------
    BTreeNodeHeader(bool is_leaf) : is_leaf(is_leaf) {}
    BTreeNodeHeader(bool is_leaf, DataStructureIdentifier* dsi) : is_leaf(is_leaf) {this->type=dsi->type; this->level=dsi->level;}
    ~BTreeNodeHeader() {}
@@ -102,9 +104,10 @@ struct BTreeNode : public BTreeNodeHeader {
          }
       }
    };
-   static constexpr u64 pure_slots_capacity = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) / (sizeof(Slot));
+   // Just to make sizeof(BTreeNode) == EFFECTIVE_PAGE_SIZE
+   static constexpr u64 max_theorical_slots_capacity = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) / (sizeof(Slot));
    static constexpr u64 left_space_to_waste = (EFFECTIVE_PAGE_SIZE - sizeof(BTreeNodeHeader)) % (sizeof(Slot));
-   Slot slot[pure_slots_capacity];
+   Slot slot[max_theorical_slots_capacity];
    u8 padding[left_space_to_waste];
 
    BTreeNode(bool is_leaf) : BTreeNodeHeader(is_leaf) {}
@@ -136,7 +139,7 @@ struct BTreeNode : public BTreeNodeHeader {
    inline u16 getPayloadLength(u16 slotId) { return slot[slotId].getPayloadLength(); }
    inline void shortenPayload(u16 slotId, u16 len)
    {
-      assert(len < slot[slotId].getPayloadLength());
+      assert(len <= slot[slotId].getPayloadLength());
       if(isDeleted(slotId)) {
          return;
       }
@@ -275,7 +278,7 @@ struct BTreeNode : public BTreeNodeHeader {
    // -------------------------------------------------------------------------------------
    void updateHint(u16 slotId);
    // -------------------------------------------------------------------------------------
-   s16 insertDoNotCopyPayload(const u8* key, u16 key_len, u16 payload_len);
+   s16 insertDoNotCopyPayload(const u8* key, u16 key_len, u16 payload_len, s32 pos = -1);
    s32 insert(const u8* key, u16 key_len, const u8* payload, u16 payload_len);
    s32 insertWithDeletionMarker(const u8* key, u16 key_len, const u8* payload, u16 payload_len, bool deletionMarker);
    static u16 spaceNeeded(u16 keyLength, u16 payload_len, u16 prefixLength);
@@ -309,7 +312,7 @@ struct BTreeNode : public BTreeNodeHeader {
    // Not synchronized or todo section
    bool removeSlot(u16 slotId);
    bool remove(const u8* key, const u16 keyLength);
-};
+};  // namespace btree
 // -------------------------------------------------------------------------------------
 static_assert(sizeof(BTreeNode) == EFFECTIVE_PAGE_SIZE, "BTreeNode must be equal to one page");
 // -------------------------------------------------------------------------------------
