@@ -87,7 +87,7 @@ s16 BTreeNode::insertDoNotCopyPayload(const u8* key, u16 key_len, u16 payload_le
 // -------------------------------------------------------------------------------------
 s32 BTreeNode::insert(const u8* key, u16 key_len, const u8* payload, u16 payload_length)
 {
-     insertWithDeletionMarker(key, key_len, payload, payload_length, false);
+     return insertWithDeletionMarker(key, key_len, payload, payload_length, false);
 }
 // -------------------------------------------------------------------------------------
 s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* payload, u16 payload_length, bool deletionMarker)
