@@ -52,7 +52,7 @@ struct BloomFilter : public DataStructureIdentifier {
    BufferFrame* rootBloomFilterPage = nullptr;
 
    BloomFilter();
-   ~BloomFilter(){};
+   ~BloomFilter() {}
 
    uint64_t pageCount() {return (1ull << pagesBits);}
 

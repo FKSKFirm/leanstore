@@ -26,47 +26,52 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
 
    uint64_t sizeBytes = (n * 4) / 8;
    uint64_t pagesBitsNew = 1 + (intlog2(sizeBytes / btree::btreePageSize));
+   while (true) {
+      jumpmuTry()
+      {
+         if (rootBloomFilterPage != nullptr) {
+            // old bloom filter exists
+            if (pageCount() == (1ull << pagesBitsNew)) {
+               return;
+            } else {
+               // we need a new bloom filter
+               // reclaim old pages
+               HybridPageGuard<BloomFilterPage> rootNode = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
+               deleteBloomFilterPages(rootNode);
+            }
+         }
+         pagesBits = pagesBitsNew;
 
-   if (rootBloomFilterPage != nullptr) {
-      // old bloom filter exists
-      if (pageCount() == (1ull << pagesBitsNew)) {
-         return;
+         // create new BloomFilter
+         this->dt_id = dtid;
+         this->type = dsi->type;
+         this->level = dsi->level;
+
+         // create root node
+         auto root_write_guard_h = HybridPageGuard<BloomFilterPage>(dtid);
+         auto root_write_guard = ExclusivePageGuard<BloomFilterPage>(std::move(root_write_guard_h));
+         root_write_guard.bf()->header.keep_in_memory = true;
+         root_write_guard.init();
+         // set the dsi for the root node
+         root_write_guard->type = dsi->type;
+         root_write_guard->level = dsi->level;
+         this->rootBloomFilterPage = root_write_guard.bf();
+
+         // pageCount= 1, 2, 4, 8, 16, 32, ...
+         if (pageCount() > 1) {
+            // root node is not large enough, need of at least one additional level of the "Btree"
+            root_write_guard->isLeaf = false;
+            pageLevels = 2;
+            // generate children of the root
+            generateNewBloomFilterLevel(root_write_guard, pageCount());
+         } else {
+            // one page is enough
+            root_write_guard->isLeaf = true;
+            pageLevels = 1;
+         }
+         jumpmu_return;
       }
-      else {
-         // we need a new bloom filter
-         // reclaim old pages
-         HybridPageGuard<BloomFilterPage> rootNode = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
-         deleteBloomFilterPages(rootNode);
-      }
-   }
-   pagesBits = pagesBitsNew;
-
-   //create new BloomFilter
-   this->dt_id = dtid;
-   this->type = dsi->type;
-   this->level = dsi->level;
-
-   //create root node
-   auto root_write_guard_h = HybridPageGuard<BloomFilterPage>(dtid);
-   auto root_write_guard = ExclusivePageGuard<BloomFilterPage>(std::move(root_write_guard_h));
-   root_write_guard.bf()->header.keep_in_memory = true;
-   root_write_guard.init();
-   // set the dsi for the root node
-   root_write_guard->type = dsi->type;
-   root_write_guard->level = dsi->level;
-   this->rootBloomFilterPage = root_write_guard.bf();
-
-   // pageCount= 1, 2, 4, 8, 16, 32, ...
-   if (pageCount() > 1) {
-      // root node is not large enough, need of at least one additional level of the "Btree"
-      root_write_guard->isLeaf = false;
-      pageLevels = 2;
-      // generate children of the root
-      generateNewBloomFilterLevel(root_write_guard, pageCount());
-   } else {
-      // one page is enough
-      root_write_guard->isLeaf = true;
-      pageLevels = 1;
+      jumpmuCatch() { }
    }
 }
 
@@ -82,34 +87,48 @@ void BloomFilter::generateNewBloomFilterLevel(ExclusivePageGuard<BloomFilterPage
       if (pageCountOnNextLevel > 1) {
          // further level required
          for (unsigned i = 0; i < BloomFilterPage::sizeOfFittingPtr; i++) {
-            // generate new non-leaf-level
-            auto new_node_h = HybridPageGuard<BloomFilterPage>(this->dt_id);
-            auto new_node = ExclusivePageGuard<BloomFilterPage>(std::move(new_node_h));
-            new_node.init();
-            new_node.bf()->header.keep_in_memory = true;
+            while (true) {
+               jumpmuTry()
+               {
+                  // generate new non-leaf-level
+                  auto new_node_h = HybridPageGuard<BloomFilterPage>(this->dt_id);
+                  auto new_node = ExclusivePageGuard<BloomFilterPage>(std::move(new_node_h));
+                  new_node.init();
+                  new_node.bf()->header.keep_in_memory = true;
 
-            new_node->type = this->type;
-            new_node->level = this->level;
-            new_node->isLeaf = false;
-            page->pointerToChildren[i] = new_node.swip();
+                  new_node->type = this->type;
+                  new_node->level = this->level;
+                  new_node->isLeaf = false;
+                  page->pointerToChildren[i] = new_node.swip();
 
-            generateNewBloomFilterLevel(new_node, pageCountOnNextLevel);
+                  generateNewBloomFilterLevel(new_node, pageCountOnNextLevel);
+                  jumpmu_break;
+               }
+               jumpmuCatch() { }
+            }
          }
          page->count = BloomFilterPage::sizeOfFittingPtr;
          pageLevels++;
          return;
       } else {
          for (unsigned i = 0; i < pagesToInsert; i++) {
-            // leaf level
-            auto new_node_h = HybridPageGuard<BloomFilterPage>(this->dt_id);
-            auto new_node = ExclusivePageGuard<BloomFilterPage>(std::move(new_node_h));
-            new_node.init();
-            new_node.bf()->header.keep_in_memory = true;
+            while (true) {
+               jumpmuTry()
+               {
+                  // leaf level
+                  auto new_node_h = HybridPageGuard<BloomFilterPage>(this->dt_id);
+                  auto new_node = ExclusivePageGuard<BloomFilterPage>(std::move(new_node_h));
+                  new_node.init();
+                  new_node.bf()->header.keep_in_memory = true;
 
-            new_node->type = this->type;
-            new_node->level = this->level;
-            new_node->isLeaf = true;
-            page->pointerToChildren[i] = new_node.swip();
+                  new_node->type = this->type;
+                  new_node->level = this->level;
+                  new_node->isLeaf = true;
+                  page->pointerToChildren[i] = new_node.swip();
+                  jumpmu_break;
+               }
+               jumpmuCatch() { }
+            }
          }
          page->count = pagesToInsert;
          pagesLowestLevel = pagesToInsert;
@@ -227,6 +246,7 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
 }
 
 void BloomFilter::deleteBloomFilterPages(HybridPageGuard<BloomFilterPage>& node) {
+   // we need no jumpmutry because all pages are kept in memory
    ExclusivePageGuard<BloomFilterPage> nodeX = ExclusivePageGuard<BloomFilterPage>(std::move(node));
    if (node->isLeaf) {
       nodeX.reclaim();

@@ -23,8 +23,13 @@ namespace storage
 namespace lsmTree
 {
 struct StaticBTree {
-   btree::BTreeLL tree;
-   BloomFilter filter;
+   std::unique_ptr<btree::BTreeLL> tree;
+   std::unique_ptr<BloomFilter> filter;
+   StaticBTree() {
+      tree = make_unique<btree::BTreeLL>();
+      filter = make_unique<BloomFilter>();
+   }
+   ~StaticBTree(){}
 };
 
 struct LSM : public KVInterface {
