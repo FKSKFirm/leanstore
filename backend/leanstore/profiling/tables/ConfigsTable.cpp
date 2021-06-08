@@ -49,6 +49,11 @@ void ConfigsTable::open()
    columns.emplace("c_zipf_factor", [&](Column& col) { col << FLAGS_zipf_factor; });
    columns.emplace("c_backoff", [&](Column& col) { col << FLAGS_backoff; });
    // -------------------------------------------------------------------------------------
+   columns.emplace("lsm_enabled", [&](Column& col) { col << FLAGS_lsm; });
+   columns.emplace("lsm_bloomFilterEnabled", [&](Column& col) { col << FLAGS_lsm_bloomFilter; });
+   columns.emplace("lsm_tieringFactor", [&](Column& col) { col << FLAGS_lsm_tieringFactor; });
+   columns.emplace("allInOneKVStore", [&](Column& col) { col << FLAGS_allInOneKVStore; });
+   // -------------------------------------------------------------------------------------
    for (auto& c : columns) {
       c.second.generator(c.second);
    }

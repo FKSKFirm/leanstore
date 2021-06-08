@@ -59,5 +59,5 @@ DECLARE_uint64(tmp);
 // -------------------------------------------------------------------------------------
 DECLARE_bool(lsm);
 DECLARE_bool(lsm_bloomFilter);
-DECLARE_uint64(lsm_pageSizeFactor);
+DECLARE_uint64(lsm_tieringFactor);
 DECLARE_bool(allInOneKVStore);

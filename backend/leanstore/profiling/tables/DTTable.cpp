@@ -51,6 +51,15 @@ void DTTable::open()
                    [&](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::xmerge_partial_counter, dt_id); });
    columns.emplace("xmerge_full_counter",
                    [&](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::xmerge_full_counter, dt_id); });
+   // -------------------------------------------------------------------------------------
+   columns.emplace("lsm_merges_inMem_tier0",
+                   [&](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::lsm_merges_inMem_tier0, dt_id); });
+   columns.emplace("lsm_merges_overall",
+                   [&](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::lsm_merges_overall, dt_id); });
+   columns.emplace("lsm_createdBloomFilters",
+                   [&](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::lsm_createdBloomFilters, dt_id); });
+   columns.emplace("lsm_reusedBloomFilters",
+                   [&](Column& col) { col << sum(WorkerCounters::worker_counters, &WorkerCounters::lsm_reusedBloomFilters, dt_id); });
 }
 // -------------------------------------------------------------------------------------
 void DTTable::next()

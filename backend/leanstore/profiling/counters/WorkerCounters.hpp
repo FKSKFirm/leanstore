@@ -51,6 +51,11 @@ struct WorkerCounters {
    atomic<u64> dt_prev_tuple[max_dt_id] = {0};
    atomic<u64> dt_inner_page[max_dt_id] = {0};
    // -------------------------------------------------------------------------------------
+   atomic<u64> lsm_merges_inMem_tier0[max_dt_id] = {0};
+   atomic<u64> lsm_merges_overall[max_dt_id] = {0};
+   atomic<u64> lsm_createdBloomFilters[max_dt_id] = {0};
+   atomic<u64> lsm_reusedBloomFilters[max_dt_id] = {0};
+   // -------------------------------------------------------------------------------------
    WorkerCounters() { t_id = workers_counter++; }
    // -------------------------------------------------------------------------------------
    static atomic<u64> workers_counter;

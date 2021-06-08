@@ -662,6 +662,7 @@ void LSM::mergeAll()
             ((btree::BTreeNode*)tiers[i+1]->tree->meta_node_bf->page.dt)->type = LSM_TYPE::BTree;
             ((btree::BTreeNode*)tiers[i+1]->tree->meta_node_bf->page.dt)->level = i+1;
          }
+         WorkerCounters::myCounters().lsm_merges_overall[this->dt_id]++;
 
          if (FLAGS_lsm_bloomFilter) {
             HybridPageGuard<BloomFilter::BloomFilterPage> rootBloomFilterPage = HybridPageGuard<BloomFilter::BloomFilterPage>(tiers[i]->filter->rootBloomFilterPage);
@@ -1275,6 +1276,8 @@ OP_RESULT LSM::insertWithDeletionMarkerUpdateMarker(u8* key, u16 keyLength, u8* 
          tiers.emplace_back(nullptr);
          mergeTrees(tiers[0], inMemBTreeInMerge.get(), nullptr);
       }
+      WorkerCounters::myCounters().lsm_merges_inMem_tier0[this->dt_id]++;
+      WorkerCounters::myCounters().lsm_merges_overall[this->dt_id]++;
 
       ensure(tiers[0]->tree->type == LSM_TYPE::BTree);
       ensure(tiers[0]->filter->type == LSM_TYPE::BloomFilter);
