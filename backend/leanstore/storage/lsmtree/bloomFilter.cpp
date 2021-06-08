@@ -15,68 +15,114 @@ unsigned intlog2(uint64_t x)
    return 64 - __builtin_clzl(x);
 }
 
+void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
+{
+   // check if old bloom filter exists and has same count of pages
+   // if yes:
+   //    return, can insert in this bloomFilter
+   // else:
+   //    reclaim all pages (could also reuse them, more difficult)
+   //    create new bloom filter with #needed pages
+
+   uint64_t sizeBytes = (n * 4) / 8;
+   uint64_t pagesBitsNew = 1 + (intlog2(sizeBytes / btree::btreePageSize));
+
+   if (rootBloomFilterPage != nullptr) {
+      // old bloom filter exists
+      if (pageCount() == (1ull << pagesBitsNew)) {
+         return;
+      }
+      else {
+         // we need a new bloom filter
+         // reclaim old pages
+         HybridPageGuard<BloomFilterPage> rootNode = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
+         deleteBloomFilterPages(rootNode);
+      }
+   }
+   pagesBits = pagesBitsNew;
+
+   //create new BloomFilter
+   this->dt_id = dtid;
+   this->type = dsi->type;
+   this->level = dsi->level;
+
+   //create root node
+   auto root_write_guard_h = HybridPageGuard<BloomFilterPage>(dtid);
+   auto root_write_guard = ExclusivePageGuard<BloomFilterPage>(std::move(root_write_guard_h));
+   root_write_guard.bf()->header.keep_in_memory = true;
+   root_write_guard.init();
+   // set the dsi for the root node
+   root_write_guard->type = dsi->type;
+   root_write_guard->level = dsi->level;
+   this->rootBloomFilterPage = root_write_guard.bf();
+
+   // pageCount= 1, 2, 4, 8, 16, 32, ...
+   if (pageCount() > 1) {
+      // root node is not large enough, need of at least one additional level of the "Btree"
+      root_write_guard->isLeaf = false;
+      pageLevels = 2;
+      // generate children of the root
+      generateNewBloomFilterLevel(root_write_guard, pageCount());
+   } else {
+      // one page is enough
+      root_write_guard->isLeaf = true;
+      pageLevels = 1;
+   }
+}
+
 BloomFilter::BloomFilter() : pagesBits(0) {}
 
-void BloomFilter::generateNewBloomFilterLevel(BloomFilter::Page* page, uint64_t pagesToInsert)
+void BloomFilter::generateNewBloomFilterLevel(ExclusivePageGuard<BloomFilterPage>& page, uint64_t pagesToInsert)
 {
    if (page->isLeaf) {
       return;
    } else {
       // pointers to the child pages doesnt fit in one root page, need of minimum one additional level
-      uint64_t pageCountOnNextLevel = ceil(pagesToInsert / (double)sizeOfFittingPtr);
+      uint64_t pageCountOnNextLevel = ceil(pagesToInsert / (double)BloomFilterPage::sizeOfFittingPtr);
       if (pageCountOnNextLevel > 1) {
          // further level required
-         for (unsigned i = 0; i < sizeOfFittingPtr; i++) {
+         for (unsigned i = 0; i < BloomFilterPage::sizeOfFittingPtr; i++) {
             // generate new non-leaf-level
-            Page* newPage = new Page();
-            newPage->isLeaf = false;
-            page->pointerToChilds[i] = newPage;
-            generateNewBloomFilterLevel(page->pointerToChilds[i], pageCountOnNextLevel);
+            auto new_node_h = HybridPageGuard<BloomFilterPage>(this->dt_id);
+            auto new_node = ExclusivePageGuard<BloomFilterPage>(std::move(new_node_h));
+            new_node.init();
+            new_node.bf()->header.keep_in_memory = true;
+
+            new_node->type = this->type;
+            new_node->level = this->level;
+            new_node->isLeaf = false;
+            page->pointerToChildren[i] = new_node.swip();
+
+            generateNewBloomFilterLevel(new_node, pageCountOnNextLevel);
          }
+         page->count = BloomFilterPage::sizeOfFittingPtr;
          pageLevels++;
          return;
       } else {
          for (unsigned i = 0; i < pagesToInsert; i++) {
             // leaf level
-            Page* newPage = new Page();
-            newPage->isLeaf = true;
-            page->pointerToChilds[i] = newPage;
+            auto new_node_h = HybridPageGuard<BloomFilterPage>(this->dt_id);
+            auto new_node = ExclusivePageGuard<BloomFilterPage>(std::move(new_node_h));
+            new_node.init();
+            new_node.bf()->header.keep_in_memory = true;
+
+            new_node->type = this->type;
+            new_node->level = this->level;
+            new_node->isLeaf = true;
+            page->pointerToChildren[i] = new_node.swip();
          }
+         page->count = pagesToInsert;
          pagesLowestLevel = pagesToInsert;
       }
    }
-}
-
-void BloomFilter::init(uint64_t n)
-{
-   uint64_t sizeBytes = (n * 4) / 8;
-   pagesBits = 1 + (intlog2(sizeBytes / btree::btreePageSize));
-   pageCount = 1ull << pagesBits;
-
-   //std::cout << "New BloomFilter with #pages: " << pageCount << std::endl;
-   rootBloomFilterPage = new Page();
-
-   // pageCount= 1, 2, 4, 8, 16, 32, ...
-   if (pageCount > 1) {
-      // root node is not large enough, need of at least one additional level of the "Btree"
-      rootBloomFilterPage->isLeaf = false;
-      pageLevels = 2;
-      // generate Childs of the root
-      generateNewBloomFilterLevel(rootBloomFilterPage, pageCount);
-   } else {
-      // one page is enough
-      rootBloomFilterPage->isLeaf = true;
-      pageLevels = 1;
-   }
-
-   pages.resize(1ull << pagesBits);
 }
 
 void BloomFilter::insert(uint64_t h)
 {
    // pagesBits are the highest n Bits, identifying the page with wordMask x uint64_t
    unsigned pageNumber = h >> (64 - pagesBits);
-   Page* currentPage = rootBloomFilterPage;
+   HybridPageGuard<BloomFilterPage> currentPage = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
+
    unsigned currentPageLevel = pageLevels;
    while (!currentPage->isLeaf) {
       uint64_t numberOfEntriesBelowNodePerChild =
@@ -88,7 +134,7 @@ void BloomFilter::insert(uint64_t h)
 
       for (unsigned i = currentPageLevel; i > 3; i--) {
          // for each extra level of 512 child pointers
-         numberOfEntriesBelowNodePerChild *= sizeOfFittingPtr;
+         numberOfEntriesBelowNodePerChild *= BloomFilterPage::sizeOfFittingPtr;
       }
 
       unsigned positionOfNextChildNode = 0;
@@ -96,13 +142,16 @@ void BloomFilter::insert(uint64_t h)
          positionOfNextChildNode++;
       }
 
+      Swip<BloomFilterPage>& childToFollow = currentPage->pointerToChildren[positionOfNextChildNode];
+      currentPage = HybridPageGuard<BloomFilterPage>(currentPage, childToFollow);
+
       pageNumber -= positionOfNextChildNode * numberOfEntriesBelowNodePerChild;
       currentPageLevel--;
-      assert(positionOfNextChildNode < (btree::btreePageSize / sizeof(Page*)));
-      currentPage = currentPage->pointerToChilds[positionOfNextChildNode];
+      assert(positionOfNextChildNode < (btree::btreePageSize / sizeof(BloomFilterPage*)));
    }
+   ExclusivePageGuard<BloomFilterPage> p = ExclusivePageGuard<BloomFilterPage>(std::move(currentPage));
 
-   Page& p = pages[pageNumber];
+   //BloomFilterPage& p = pages[pageNumber];
    uint64_t searchMask = 0;
 
    // 1ull = 64 Bits = 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0001
@@ -121,10 +170,9 @@ void BloomFilter::insert(uint64_t h)
 
    // wordMask=511 = 0001 1111 1111 for btreePageSize=4096
    // select uint64_t word based on bits 31-39 (depending on wordMask) of h
-   uint64_t& word = p.word[(h >> 30) & wordMask];
-   uint64_t& word2 = currentPage->word[(h >> 30) & wordMask];
+   assert(((h >> 30) & BloomFilterPage::wordMask) < (btree::btreePageSize / sizeof(uint64_t)));
+   uint64_t& word = p->word[(h >> 30) & BloomFilterPage::wordMask];
    word |= searchMask;
-   word2 |= searchMask;
    // std::cout << "Insert in pageNumber: " << pageNumber << std::endl;
    // std::cout << "Insert in currentPage: " << currentPage << std::endl;
 }
@@ -139,29 +187,8 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
    if (!pagesBits)
       return false;
    uint64_t h = hashKey(key, len);
-   /*
-         int pageNumber = h>>(64-pagesBits);
-         Page *currentPage = rootBloomFilterPage;
-         int currentPageLevel = pageLevels;
-         while (!currentPage->isLeaf) {
-            uint64_t numberOfEntriesBelowNode = 1;
-            for (int i=currentPageLevel; i>1; i--) {
-               numberOfEntriesBelowNode *= sizeOfFittingPtr;
-            }
-            uint64_t numbersOfEntriesPerNode = numberOfEntriesBelowNode/sizeOfFittingPtr;
-
-            int positionOfNextChildNode = 1;
-            while (pageNumber >= positionOfNextChildNode * numbersOfEntriesPerNode) {
-               positionOfNextChildNode++;
-            }
-
-            pageNumber -= (positionOfNextChildNode-1) * numbersOfEntriesPerNode;
-            currentPageLevel--;
-            currentPage = currentPage->pointerToChilds[positionOfNextChildNode-1];
-         }
-   */
    unsigned pageNumber = h >> (64 - pagesBits);
-   Page* currentPage = rootBloomFilterPage;
+   HybridPageGuard<BloomFilterPage> currentPage = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
    unsigned currentPageLevel = pageLevels;
    while (!currentPage->isLeaf) {
       uint64_t numberOfEntriesBelowNodePerChild =
@@ -173,7 +200,7 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
 
       for (unsigned i = currentPageLevel; i > 3; i--) {
          // for each extra level of 512 child pointers
-         numberOfEntriesBelowNodePerChild *= sizeOfFittingPtr;
+         numberOfEntriesBelowNodePerChild *= BloomFilterPage::sizeOfFittingPtr;
       }
 
       int positionOfNextChildNode = 0;
@@ -181,9 +208,11 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
          positionOfNextChildNode++;
       }
 
+      Swip<BloomFilterPage>& childToFollow = currentPage->pointerToChildren[positionOfNextChildNode];
+      currentPage = HybridPageGuard<BloomFilterPage>(currentPage, childToFollow);
+
       pageNumber -= positionOfNextChildNode * numberOfEntriesBelowNodePerChild;
       currentPageLevel--;
-      currentPage = currentPage->pointerToChilds[positionOfNextChildNode];
    }
 
    uint64_t searchMask = 0;
@@ -193,12 +222,26 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
    searchMask |= 1ull << ((h >> 18) & 63);
    searchMask |= 1ull << ((h >> 24) & 63);
 
-   uint64_t word = currentPage->word[(h >> 30) & wordMask];
+   uint64_t word = currentPage->word[(h >> 30) & BloomFilterPage::wordMask];
    return ((word & searchMask) == searchMask);
-   // old:
-   // uint64_t word = p.word[(h>>30) & wordMask];
-   // return ((word & searchMask) == searchMask);
 }
+
+void BloomFilter::deleteBloomFilterPages(HybridPageGuard<BloomFilterPage>& node) {
+   ExclusivePageGuard<BloomFilterPage> nodeX = ExclusivePageGuard<BloomFilterPage>(std::move(node));
+   if (node->isLeaf) {
+      nodeX.reclaim();
+   }
+   else {
+      // reclaim children first
+      for (unsigned i = 0; i < node->count; i++) {
+         Swip<BloomFilterPage>& childToFollow = node->pointerToChildren[i];
+         HybridPageGuard<BloomFilterPage> child = HybridPageGuard<BloomFilterPage>(node, childToFollow);
+         deleteBloomFilterPages(child);
+      }
+      nodeX.reclaim();
+   }
+}
+
 }
 }
 }

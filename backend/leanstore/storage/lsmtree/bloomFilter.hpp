@@ -22,8 +22,6 @@ namespace storage
 {
 namespace lsmTree
 {
-//const uint64_t btreePageSize = sizeof(BufferFrame::Page::dt);
-
 // BloomFilter for performance lookups in BTrees, LSM-Trees...
 // Fixed size from the beginning, can not resize
 // Therefore fixed Tree structure
@@ -34,37 +32,36 @@ struct BloomFilter : public DataStructureIdentifier {
       MurmurHash3_x64_128(key, len, 137, &out);
       return out[1];
    }
-   // TODO: set correct PageSize: (static constexpr u64 EFFECTIVE_PAGE_SIZE = sizeof(BufferFrame::Page::dt);)
-   // TODO: Tree-structure for LeanStore
-   struct Page {
+
+   struct BloomFilterPage : public DataStructureIdentifier {
       bool isLeaf;
+      unsigned count;
+      static const uint64_t sizeOfFittingPtr = ((EFFECTIVE_PAGE_SIZE - sizeof(DataStructureIdentifier) - sizeof(count) - sizeof(isLeaf)) / sizeof(Swip<BloomFilterPage>*));
+      static const uint64_t wordMask = ((EFFECTIVE_PAGE_SIZE - sizeof(DataStructureIdentifier) - sizeof(count) - sizeof(isLeaf)) / sizeof(uint64_t)) - 1;
       union {
-         uint64_t word[(btree::btreePageSize / sizeof(uint64_t))];
-         Page* pointerToChilds[(btree::btreePageSize / sizeof(Page*))];
+         uint64_t word[((EFFECTIVE_PAGE_SIZE - sizeof(DataStructureIdentifier) - sizeof(count) - sizeof(isLeaf)) / sizeof(uint64_t))];
+         Swip<BloomFilterPage> pointerToChildren[sizeOfFittingPtr];
       };
-      Page() { memset(word, 0, sizeof(word)); };
+      BloomFilterPage() { memset(word, 0, sizeof(word)); };
    };
 
+   DTID dt_id;
    uint64_t pagesBits;
-   uint64_t pageCount = 0;
-   uint64_t pagesLowestLevel = 0;
-   Page* rootBloomFilterPage;
    uint64_t pageLevels = 0;
-   std::vector<Page> pages;
-   static const uint64_t wordMask = (btree::btreePageSize / sizeof(uint64_t)) - 1;
-   static const uint64_t sizeOfFittingPtr = sizeof(rootBloomFilterPage->pointerToChilds) / sizeof(Page*);
+   uint64_t pagesLowestLevel = 0;
+   BufferFrame* rootBloomFilterPage = nullptr;
 
    BloomFilter();
-   ~BloomFilter() { pages.clear(); };
+   ~BloomFilter(){};
 
-   void init(uint64_t n);
+   uint64_t pageCount() {return (1ull << pagesBits);}
 
+   void create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n);
    void insert(uint64_t h);
-
    void insert(uint8_t* key, unsigned len);
-
    bool lookup(uint8_t* key, unsigned len);
-   void generateNewBloomFilterLevel(Page* page, uint64_t pagesToInsert);
+   void generateNewBloomFilterLevel(ExclusivePageGuard<BloomFilterPage>& page, uint64_t pagesToInsert);
+   void deleteBloomFilterPages(HybridPageGuard<BloomFilterPage>& node);
 };
 }
 }
