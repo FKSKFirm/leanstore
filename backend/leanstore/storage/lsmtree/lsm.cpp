@@ -381,8 +381,8 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
 
       merge_mutex.lock();
       bTreeInMerge = std::move(levelToReplace);
-      //if (bTree != nullptr)
-         //newTree->filter = std::move(bTreeInMerge->filter);
+      if (bTree != nullptr)
+         newTree->filter = std::move(bTreeInMerge->filter);
       levelToReplace = std::move(newTree);
       merge_mutex.unlock();
 

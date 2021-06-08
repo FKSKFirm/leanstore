@@ -32,7 +32,7 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
          if (rootBloomFilterPage != nullptr) {
             // old bloom filter exists
             if (pageCount() == (1ull << pagesBitsNew)) {
-               return;
+               jumpmu_return;
             } else {
                // we need a new bloom filter
                // reclaim old pages
