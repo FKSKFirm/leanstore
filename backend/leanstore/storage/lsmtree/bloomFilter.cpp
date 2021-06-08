@@ -36,7 +36,7 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
          if (rootBloomFilterPage != nullptr) {
             // old bloom filter exists
             if (pageCount() == (1ull << pagesBitsNew)) {
-               WorkerCounters::myCounters().lsm_reusedBloomFilters[this->dt_id]++;
+               WorkerCounters::myCounters().lsm_reusedBloomFilters[dtid]++;
                jumpmu_return;
             } else {
                // we need a new bloom filter
@@ -45,7 +45,7 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
                deleteBloomFilterPages(rootNode);
             }
          }
-         WorkerCounters::myCounters().lsm_createdBloomFilters[this->dt_id]++;
+         WorkerCounters::myCounters().lsm_createdBloomFilters[dtid]++;
          pagesBits = pagesBitsNew;
 
          // create new BloomFilter

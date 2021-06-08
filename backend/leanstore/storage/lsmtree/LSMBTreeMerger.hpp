@@ -64,6 +64,7 @@ namespace leanstore
                      parent_guard.unlock();
                      leaf = std::move(current_node);
                      leaf.toExclusive();
+                     cout << "move21Leaf: " << leaf.bf << " id: " << leaf.ptr()->id << endl;
                      positionInNode = 0;
                      jumpmu_break;
                   }
@@ -149,7 +150,9 @@ namespace leanstore
                      }
                      else {
                         leaf.toExclusive();
+                        leaf.incrementGSN();
                         assert(leaf.bf != btree.meta_node_bf);
+                        cout << "nextLeaf reclaim: " << leaf.bf << " id: " << leaf.ptr()->id << endl;
                         leaf.reclaim();
                         parentNodeGuard.incrementGSN();
                         if (parentNodeGuard->count == 0) {

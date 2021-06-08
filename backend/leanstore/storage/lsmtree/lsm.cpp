@@ -464,7 +464,6 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                assert(((btree::BTreeNode*)((btree::BTreeNode*)levelToReplace->tree->meta_node_bf->page.dt)->upper.bf->page.dt)->type == LSM_TYPE::BTree);
 
                // create BloomFilter
-               //levelToReplace->filter->init(entryCount);
                DataStructureIdentifier bloomDSI = DataStructureIdentifier();
                bloomDSI.level = dsi.level;
                bloomDSI.type = LSM_TYPE::BloomFilter;
@@ -642,6 +641,7 @@ void LSM::mergeAll()
             cout << "merge level " << i << " with level " << i+1 << endl;
 
             mergeTrees(tiers[i + 1], curr.tree.get(), tiers[i + 1]->tree.get());
+            curr.tree.release();
             bTreeInMerge.release();
             cout << "Merge done" << endl;
 
@@ -653,6 +653,7 @@ void LSM::mergeAll()
             // new level
             tiers.emplace_back(nullptr);
             mergeTrees(tiers[i + 1], curr.tree.get(), nullptr);
+            curr.tree.release();
 
             //cout << "neues level, jetzt: " << i+1 << " DTID: " << this->dt_id << " countEntries LSM: " << this->countEntries() <<endl;
             tiers[i+1]->tree->type = LSM_TYPE::BTree;
@@ -1275,6 +1276,7 @@ OP_RESULT LSM::insertWithDeletionMarkerUpdateMarker(u8* key, u16 keyLength, u8* 
          // create first tier
          tiers.emplace_back(nullptr);
          mergeTrees(tiers[0], inMemBTreeInMerge.get(), nullptr);
+         inMemBTreeInMerge.release();
       }
       WorkerCounters::myCounters().lsm_merges_inMem_tier0[this->dt_id]++;
       WorkerCounters::myCounters().lsm_merges_overall[this->dt_id]++;

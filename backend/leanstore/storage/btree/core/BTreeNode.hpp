@@ -24,7 +24,7 @@ namespace storage
 namespace btree
 {
 static const unsigned btreePageSize = EFFECTIVE_PAGE_SIZE;
-
+static unsigned uid = 0;
 // -------------------------------------------------------------------------------------
 struct BTreeNode;
 using SwipType = Swip<BTreeNode>;
@@ -46,6 +46,8 @@ static inline u16 swap(u16 x)
 struct BTreeNodeHeader : public DataStructureIdentifier {
    static const u16 underFullSize = EFFECTIVE_PAGE_SIZE * 0.6;
    static const u16 K_WAY_MERGE_THRESHOLD = EFFECTIVE_PAGE_SIZE * 0.45;
+
+   unsigned id = uid++;
 
    struct SeparatorInfo {
       u16 length;
