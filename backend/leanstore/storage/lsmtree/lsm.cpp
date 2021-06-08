@@ -402,7 +402,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
       LSMBTreeMerger* iterator;
 
       aTreeLSMIterator.moveToFirstLeaf();
-      if(bTree==NULL) {
+      if (bTree == nullptr) {
          bTreeLSMIterator.done = true;
       }
       else {
@@ -477,7 +477,7 @@ unique_ptr<StaticBTree> LSM::mergeTrees(unique_ptr<StaticBTree>& levelToReplace,
                   aTreeMetaNode.toExclusive();
                   aTreeRootNode.reclaim();
                   aTreeMetaNode.reclaim();
-                  if (bTree != NULL) {
+                  if (bTree != nullptr) {
                      HybridPageGuard<btree::BTreeNode> bTreeMetaNode = HybridPageGuard<btree::BTreeNode>(bTree->meta_node_bf);
                      HybridPageGuard<btree::BTreeNode> bTreeRootNode(bTreeMetaNode, bTreeMetaNode->upper);
                      bTreeRootNode.toExclusive();
@@ -1097,7 +1097,7 @@ OP_RESULT LSM::scanDesc(u8* start_key, u16 key_length, function<bool(const u8* k
          //************ Find highest value *****************
 
          // highest Key in Level (-1 = inMemBTree, 0 = tiers[0])
-         int highestValue = -1;
+         int64_t highestValue = -1;
          Slice nextValue = inMemSlice;
 
          for (unsigned i = 0; i < tiers.size(); i++) {

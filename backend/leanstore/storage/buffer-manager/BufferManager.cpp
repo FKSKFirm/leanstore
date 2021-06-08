@@ -160,9 +160,9 @@ BufferFrame& BufferManager::allocatePage()
    free_bf.header.lastWrittenGSN = free_bf.page.GSN = 0;
    // -------------------------------------------------------------------------------------
    if (free_pid == dram_pool_size) {
-      cout << "-------------------------------------------------------------------------------------" << endl;
-      cout << "Going out of memory !" << endl;
-      cout << "-------------------------------------------------------------------------------------" << endl;
+      //cout << "-------------------------------------------------------------------------------------" << endl;
+      //cout << "Going out of memory !" << endl;
+      //cout << "-------------------------------------------------------------------------------------" << endl;
    }
    free_bf.header.latch.assertExclusivelyLatched();
    // -------------------------------------------------------------------------------------
@@ -184,7 +184,7 @@ void BufferManager::reclaimPage(BufferFrame& bf)
       // DO NOTHING ! we have a garbage collector ;-)
       bf.header.latch->fetch_add(LATCH_EXCLUSIVE_BIT, std::memory_order_release);
       bf.header.latch.mutex.unlock();
-      cout << "garbage collector, yeah" << endl;
+      //cout << "garbage collector, yeah" << endl;
    } else {
       Partition& partition = getPartition(bf.header.pid);
       bf.reset();
