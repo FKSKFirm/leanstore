@@ -663,9 +663,11 @@ void LSM::mergeAll()
             ((btree::BTreeNode*)tiers[i+1]->tree->meta_node_bf->page.dt)->level = i+1;
          }
 
-         HybridPageGuard<BloomFilter::BloomFilterPage> rootBloomFilterPage = HybridPageGuard<BloomFilter::BloomFilterPage>(tiers[i]->filter->rootBloomFilterPage);
-         tiers[i]->filter->deleteBloomFilterPages(rootBloomFilterPage);
-         tiers[i]->filter->rootBloomFilterPage = nullptr;
+         if (FLAGS_lsm_bloomFilter) {
+            HybridPageGuard<BloomFilter::BloomFilterPage> rootBloomFilterPage = HybridPageGuard<BloomFilter::BloomFilterPage>(tiers[i]->filter->rootBloomFilterPage);
+            tiers[i]->filter->deleteBloomFilterPages(rootBloomFilterPage);
+            tiers[i]->filter->rootBloomFilterPage = nullptr;
+         }
 
          tiers[i] = make_unique<StaticBTree>();
 

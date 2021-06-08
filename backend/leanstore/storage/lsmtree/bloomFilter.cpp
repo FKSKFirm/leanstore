@@ -24,6 +24,10 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
    //    reclaim all pages (could also reuse them, more difficult)
    //    create new bloom filter with #needed pages
 
+   if (!FLAGS_lsm_bloomFilter) {
+      return;
+   }
+
    uint64_t sizeBytes = (n * 4) / 8;
    uint64_t pagesBitsNew = 1 + (intlog2(sizeBytes / btree::btreePageSize));
    while (true) {
@@ -138,6 +142,10 @@ void BloomFilter::generateNewBloomFilterLevel(ExclusivePageGuard<BloomFilterPage
 
 void BloomFilter::insert(uint64_t h)
 {
+   if (!FLAGS_lsm_bloomFilter) {
+      return;
+   }
+
    // pagesBits are the highest n Bits, identifying the page with wordMask x uint64_t
    unsigned pageNumber = h >> (64 - pagesBits);
    HybridPageGuard<BloomFilterPage> currentPage = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
@@ -204,7 +212,7 @@ void BloomFilter::insert(uint8_t* key, unsigned len)
 bool BloomFilter::lookup(uint8_t* key, unsigned len)
 {
    if (!pagesBits)
-      return false;
+      return true;
    uint64_t h = hashKey(key, len);
    unsigned pageNumber = h >> (64 - pagesBits);
    HybridPageGuard<BloomFilterPage> currentPage = HybridPageGuard<BloomFilterPage>(rootBloomFilterPage);
@@ -247,6 +255,10 @@ bool BloomFilter::lookup(uint8_t* key, unsigned len)
 
 void BloomFilter::deleteBloomFilterPages(HybridPageGuard<BloomFilterPage>& node) {
    // we need no jumpmutry because all pages are kept in memory
+   if (!FLAGS_lsm_bloomFilter) {
+      return;
+   }
+
    ExclusivePageGuard<BloomFilterPage> nodeX = ExclusivePageGuard<BloomFilterPage>(std::move(node));
    if (node->isLeaf) {
       nodeX.reclaim();
