@@ -64,7 +64,7 @@ namespace leanstore
                      parent_guard.unlock();
                      leaf = std::move(current_node);
                      leaf.toExclusive();
-                     cout << "move21Leaf: " << leaf.bf << " id: " << leaf.ptr()->id << endl;
+                     //cout << "move21Leaf: " << leaf.bf << " id: " << leaf.ptr()->id << endl;
                      positionInNode = 0;
                      jumpmu_break;
                   }
@@ -130,6 +130,8 @@ namespace leanstore
                //    call nextLeaf()
 
                if (currentLevel == 0) {
+                  leaf.ptr()->is_leaf = true;
+                  leaf.incrementGSN();
                   leaf.unlock();
                   done = true;
                   return false;
@@ -144,6 +146,8 @@ namespace leanstore
                      if (parentNodeGuard.bf == btree.meta_node_bf) {
                         // merge done
                         assert(leaf.bf != btree.meta_node_bf);
+                        leaf.ptr()->is_leaf = true;
+                        leaf.incrementGSN();
                         leaf.unlock();
                         done = true;
                         jumpmu_return false;
@@ -152,9 +156,9 @@ namespace leanstore
                         leaf.toExclusive();
                         leaf.incrementGSN();
                         assert(leaf.bf != btree.meta_node_bf);
-                        cout << "nextLeaf reclaim: " << leaf.bf << " id: " << leaf.ptr()->id << endl;
                         leaf.reclaim();
                         parentNodeGuard.incrementGSN();
+                        //cout << "nextLeaf reclaim: " << leaf.bf << " id: " << leaf.ptr()->id << endl;
                         if (parentNodeGuard->count == 0) {
                            currentLevel--;
                            // the leaf was pointed by the upper ptr, so we can reclaim this parent as well

@@ -37,7 +37,9 @@ LeanStore::LeanStore()
       flags |= O_TRUNC | O_CREAT;
    }
    ssd_fd = open(FLAGS_ssd_path.c_str(), flags, 0666);
-   posix_check(ssd_fd > -1);
+   if (ssd_fd == -1) {
+      perror("posix error");
+   }
    if (FLAGS_falloc > 0) {
       const u64 gib_size = 1024ull * 1024ull * 1024ull;
       auto dummy_data = (u8*)aligned_alloc(512, gib_size);

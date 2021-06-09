@@ -116,13 +116,6 @@ s32 BTreeNode::insertWithDeletionMarker(const u8* key, u16 key_len, const u8* pa
    }
 }
 // -------------------------------------------------------------------------------------
-// TODO: probably broken
-bool BTreeNode::update(u8*, u16, u16, u8*)
-{
-   ensure(false);
-   return false;
-}
-// -------------------------------------------------------------------------------------
 void BTreeNode::compactify()
 {
    u16 should = freeSpaceAfterCompaction();

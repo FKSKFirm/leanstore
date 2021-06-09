@@ -212,6 +212,7 @@ int main(int argc, char** argv)
          MYPAUSE();
       }
       crm.joinAll();
+      sleep(2);
    }
    {
       cout << endl;
