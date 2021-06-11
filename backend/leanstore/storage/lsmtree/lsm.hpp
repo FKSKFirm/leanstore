@@ -33,11 +33,8 @@ struct StaticBTree {
 };
 
 struct LSM : public KVInterface {
-   uint64_t baseLimit = (1024 * 1024 * 8) / btree::btreePageSize;
-   //uint64_t baseLimit = (1024 * 1024) / btree::btreePageSize;
    //half buffer for inMemBTree
-   //uint64_t baseLimit = (1024 * 1024 * 1024 * FLAGS_dram_gib) / (2 * PAGE_SIZE);
-   //uint64_t baseLimit = (1024 * 8) / btree::btreePageSize;
+   uint64_t baseLimit = ((1024 * 1024 * 1024 * FLAGS_dram_gib) / PAGE_SIZE) * FLAGS_lsm_inMemBTreeSize;
    uint64_t factor = FLAGS_lsm_tieringFactor;
 
    // pointer to inMemory BTree (Root of LSM-Tree)

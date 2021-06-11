@@ -61,3 +61,4 @@ DECLARE_bool(lsm);
 DECLARE_bool(lsm_bloomFilter);
 DECLARE_uint64(lsm_tieringFactor);
 DECLARE_bool(allInOneKVStore);
+DECLARE_double(lsm_inMemBTreeSize);

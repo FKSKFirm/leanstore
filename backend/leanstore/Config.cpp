@@ -69,3 +69,4 @@ DEFINE_bool(lsm, false, "Enable LSM implementation instead of BTree");
 DEFINE_bool(lsm_bloomFilter, false, "Enable Bloom Filter in LSM");
 DEFINE_uint64(lsm_tieringFactor, 10, "Factor for size of each LSM level");
 DEFINE_bool(allInOneKVStore, false, "Have a single BTree/LSM-Tree for TPCC");
+DEFINE_double(lsm_inMemBTreeSize, 0.2, "Percentage of the buffer occupied by the In-Memory-BTree");
