@@ -47,9 +47,6 @@ struct LSM : public KVInterface {
    unsigned levelInMerge;
    // if levelInMerge == 0, a new inMemBTree is created and the oldInMemBTree is moved to inMemBTreeInMerge
    std::unique_ptr<btree::BTreeLL> inMemBTreeInMerge;
-   // if levelInMerge == 1, tiers[0] stays the old (maybe partially disassembled) bTree at level 0, tiers[1] is already the new bTree (with the highest upper ptr pointing to the old tier at level 1)
-   // and bTreeInMerge is the old tier at level 1
-   std::unique_ptr<StaticBTree> bTreeInMerge;
    std::mutex merge_mutex;
 
    LSM();

@@ -449,6 +449,9 @@ struct ParentSwipHandler BTreeGeneric::findParent(BTreeGeneric& btree, BufferFra
 {
    auto& c_node = *reinterpret_cast<BTreeNode*>(to_find.page.dt);
    // -------------------------------------------------------------------------------------
+   if (&btree == NULL) {
+      jumpmu::jump();
+   }
    HybridPageGuard<BTreeNode> p_guard(btree.meta_node_bf);
    u16 level = 0;
    // -------------------------------------------------------------------------------------
