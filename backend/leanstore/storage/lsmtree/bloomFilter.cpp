@@ -24,6 +24,12 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
    //    reclaim all pages (could also reuse them, more difficult)
    //    create new bloom filter with #needed pages
 
+
+   // create new BloomFilter
+   this->dt_id = dtid;
+   this->type = dsi->type;
+   this->level = dsi->level;
+
    if (!FLAGS_lsm_bloomFilter) {
       return;
    }
@@ -47,11 +53,6 @@ void BloomFilter::create(DTID dtid, DataStructureIdentifier* dsi, uint64_t n)
          }
          WorkerCounters::myCounters().lsm_createdBloomFilters[dtid]++;
          pagesBits = pagesBitsNew;
-
-         // create new BloomFilter
-         this->dt_id = dtid;
-         this->type = dsi->type;
-         this->level = dsi->level;
 
          // create root node
          auto root_write_guard_h = HybridPageGuard<BloomFilterPage>(dtid);
