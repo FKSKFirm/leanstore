@@ -121,6 +121,17 @@ class HybridPageGuard
    void toShared() { guard.toShared(); }
    void toExclusive() { guard.toExclusive(); }
    // -------------------------------------------------------------------------------------
+   // Parent should be exclusively locked, we need a Swip in the parent
+   // This is the child page that we want to cool
+   void cool(Swip<T>& swip_in_parent)
+   {
+      BMC::global_bf->coolPage(*bf);
+      swip_in_parent.cool();
+      unlock();
+      guard.state = GUARD_STATE::MOVED;
+      // Should not use this page guard at this point
+   }
+   // -------------------------------------------------------------------------------------
    void reclaim()
    {
       BMC::global_bf->reclaimPage(*(bf));
@@ -179,6 +190,7 @@ class ExclusivePageGuard
    inline T* operator->() { return reinterpret_cast<T*>(ref_guard.bf->page.dt); }
    inline BufferFrame* bf() { return ref_guard.bf; }
    inline void reclaim() { ref_guard.reclaim(); }
+   inline void cool(Swip<T>& swip_in_parent) { ref_guard.cool(swip_in_parent); }
 };
 // -------------------------------------------------------------------------------------
 template <typename T>
